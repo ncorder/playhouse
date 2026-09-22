@@ -1,0 +1,19 @@
+name = "AZLegInfo"
+uuid = "19daf8e9-0870-4f25-9c1d-f38ed379fe1e"
+authors = ["Mercy COrder"]
+version = "0.0.1"
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+JavaCall = "494afd89-becb-516b-aafa-70d2670c0337"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+
+[compat]
+DataFrames = "1"
+HTTP = "1"
+JSON3 = "1"
+julia = "1"
+JavaCall = "0.8.1"
+Downloads = "1"
