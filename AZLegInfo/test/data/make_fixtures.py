@@ -10,7 +10,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 out = sys.argv[1]
 
-# Generic tables: 80 rows over 3 pages, with and without ruling lines.
+# A PDF that is not a Member Voting History: an 80-row table over 3 pages.
 header = ["Bill", "Short Title", "Date", "Motion", "Vote"]
 rows = [header] + [
     [f"SB{1000 + i}", f"appropriation; item {i}", f"02/{(i % 28) + 1:02d}/2026",
@@ -31,7 +31,6 @@ def build_table(path, ruled):
 
 
 build_table(f"{out}/votes_ruled.pdf", ruled=True)
-build_table(f"{out}/votes_unruled.pdf", ruled=False)
 
 # Member Voting History: same layout, fonts and x positions as the House
 # PDFs (57th Legislature, 2nd Regular Session), with made-up bills.

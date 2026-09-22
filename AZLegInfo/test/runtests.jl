@@ -1,66 +1,24 @@
 using Test, AZLegInfo, HTTP, Sockets, p7zip_jll
 
 data(name) = joinpath(@__DIR__, "data", name)
-vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1, 2, '0'))/2026",
-               isodd(i) ? "3rd Read" : "Final Read", ["Y", "N", "NV", "EXC"][i % 4 + 1]]
+error_message(f) = try f(); "" catch err; sprint(showerror, err) end
+file_url(path) = "file://" * (Sys.iswindows() ? "/" * replace(path, '\\' => '/') : path)
 
 @testset "AZLegInfo" begin
     @testset "Bill API" begin
         @test getBillId("SB1010", 130) == 83585
     end
 
-    # Fixtures are an 80-row synthetic vote table spanning 3 pages, one
-    # drawn with ruling lines (lattice) and one without (stream).
-    @testset "extract_tables_from_pdf" begin
-        ruled = extract_tables_from_pdf(data("votes_ruled.pdf"))
-        @test names(ruled) == ["column_1", "column_2", "column_3", "column_4", "column_5"]
-        @test Vector(ruled[1, :]) == ["Bill", "Short Title", "Date", "Motion", "Vote"]
-        votes = ruled[ruled.column_1 .!= "Bill", :]
-        @test [Vector(r) for r in eachrow(votes)] == vote_row.(0:79)
-
-        # Guessed columns can merge cells (the title on page 1 does), but
-        # no text is dropped and words keep their spaces.
-        unruled = extract_tables_from_pdf(data("votes_unruled.pdf"))
-        lines = Set(join(filter(!isempty, collect(r)), " ") for r in eachrow(unruled))
-        @test all(join(vote_row(i), " ") in lines for i in 0:79)
-
-        # Explicit column boundaries, in points from the left of the page.
-        unruled = extract_tables_from_pdf(data("votes_unruled.pdf"); columns=[208, 306, 364, 420])
-        votes = unruled[startswith.(unruled.column_1, "SB"), :]
-        @test [Vector(r) for r in eachrow(votes)] == vote_row.(0:79)
-
-        # Selected pages, in the order given.
-        @test extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[1, 2, 3]) == ruled
-        page2 = extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[2])
-        @test 0 < size(page2, 1) < size(ruled, 1)
-        @test !("SB1000" in page2.column_1) && !("SB1079" in page2.column_1)
-        @test extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[3, 1]) ==
-              vcat(extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[3]),
-                   extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[1]))
-
-        @test_throws ArgumentError extract_tables_from_pdf("does_not_exist.pdf")
-    end
-
-    # Same layout as the House Member Voting History PDFs; bills split
-    # across page breaks, "NOW:" titles, and chapters V, 191, "1 E" and none.
-    @testset "extract_voting_history" begin
+    @testset "getSession57HouseLegislatureMemberVotingHistory" begin
+        # voting_history.pdf has the same layout as the House Member Voting
+        # History PDFs: bills split across page breaks, "NOW:" titles, and
+        # chapters V, 191, "1 E" and none. voting_history_pena.pdf has its
+        # first five bills; voting_history_empty.pdf has no votes.
         lines = split.(readlines(data("voting_history_expected.tsv")), '\t')
         header, expected = Symbol.(lines[1]), lines[2:end]
-
-        votes = @test_logs extract_voting_history(data("voting_history.pdf"))
-
-        @test size(votes, 1) == length(expected)
-        @test all(==("TESTMEMBER"), votes.member)
-        for (i, col) in enumerate(header)
-            @test string.(votes[!, col]) == getindex.(expected, i)
-        end
-
-        @test_throws ArgumentError extract_voting_history(data("votes_ruled.pdf"))
-    end
-
-    @testset "download_voting_histories" begin
-        error_message(f) = try f(); "" catch err; sprint(showerror, err) end
-        file_url(path) = "file://" * (Sys.iswindows() ? "/" * replace(path, '\\' => '/') : path)
+        matches_expected(votes, rows) =
+            size(votes, 1) == length(rows) &&
+            all(string.(votes[!, col]) == getindex.(rows, i) for (i, col) in enumerate(header))
 
         mktempdir() do dir
             function make_zip(name, files)
@@ -85,10 +43,12 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
                 "a/Test Voting History.pdf" => data("voting_history.pdf"),
                 "b/Test Voting History.pdf" => data("voting_history.pdf"),
             ])
+            other_pdf_zip = make_zip("other.zip", ["c/Report.pdf" => data("votes_ruled.pdf")])
 
             responses = Dict(
                 "/histories.zip" => (200, read(histories_zip)),
                 "/duplicate.zip" => (200, read(duplicate_zip)),
+                "/other.zip" => (200, read(other_pdf_zip)),
                 "/report.pdf" => (200, read(data("votes_ruled.pdf"))),
             )
             port, socket = listenany(ip"127.0.0.1", 49152)
@@ -99,29 +59,35 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
             end
             base = "http://127.0.0.1:$port"
 
-            # A private temp directory, so other processes' temp files don't count.
             scratch = mktempdir()
             try
-                histories = withenv("TMPDIR" => scratch, "TMP" => scratch, "TEMP" => scratch) do
-                    @test tempdir() == scratch
-                    download_voting_histories("$base/histories.zip")
-                end
+                # No warnings: every PDF's counts match its printed totals. This
+                # first call also starts the JVM, whose Tabula jar stays in a
+                # temp directory until Julia exits.
+                histories = @test_logs getSession57HouseLegislatureMemberVotingHistory("$base/histories.zip")
 
                 @test histories isa Dict{String,<:Any}
                 @test sort(collect(keys(histories))) == ["NOVOTES", "PEÑA", "TESTMEMBER"]
-                @test histories["TESTMEMBER"] == extract_voting_history(data("voting_history.pdf"))
-                @test histories["PEÑA"] == extract_voting_history(data("voting_history_pena.pdf"))
-                @test size(histories["PEÑA"], 1) == 9
+                @test matches_expected(histories["TESTMEMBER"], expected)
+                @test all(==("TESTMEMBER"), histories["TESTMEMBER"].member)
+                @test matches_expected(histories["PEÑA"], expected[1:9])
+                @test all(==("PEÑA"), histories["PEÑA"].member)
                 @test size(histories["NOVOTES"], 1) == 0
                 @test names(histories["NOVOTES"]) == names(histories["TESTMEMBER"])
 
+                # A private temp directory, so other processes' temp files don't count.
                 withenv("TMPDIR" => scratch, "TMP" => scratch, "TEMP" => scratch) do
-                    @test download_voting_histories(file_url(histories_zip)) == histories
+                    @test tempdir() == scratch
 
-                    @test occursin("404", error_message(() -> download_voting_histories("$base/missing.zip")))
-                    @test occursin("Not a zip file", error_message(() -> download_voting_histories("$base/report.pdf")))
+                    @test getSession57HouseLegislatureMemberVotingHistory("$base/histories.zip") == histories
+                    @test getSession57HouseLegislatureMemberVotingHistory(file_url(histories_zip)) == histories
+
+                    @test occursin("404", error_message(() -> getSession57HouseLegislatureMemberVotingHistory("$base/missing.zip")))
+                    @test occursin("Not a zip file", error_message(() -> getSession57HouseLegislatureMemberVotingHistory("$base/report.pdf")))
                     @test occursin("Two PDFs in the zip are for TESTMEMBER",
-                                   error_message(() -> download_voting_histories("$base/duplicate.zip")))
+                                   error_message(() -> getSession57HouseLegislatureMemberVotingHistory("$base/duplicate.zip")))
+                    @test occursin("Not a Member Voting History PDF",
+                                   error_message(() -> getSession57HouseLegislatureMemberVotingHistory("$base/other.zip")))
                 end
 
                 # The downloaded zip and extracted PDFs are gone, errors included.
@@ -132,8 +98,12 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
             end
         end
 
+        @test var"57SessionHouseLegislatureMemberVotingHistory" === getSession57HouseLegislatureMemberVotingHistory
+        @test Symbol("57SessionHouseLegislatureMemberVotingHistory") in names(AZLegInfo)
+        @test :getSession57HouseLegislatureMemberVotingHistory in names(AZLegInfo)
+
         # The real dataset: https://codeberg.org/AZLegInfo/datasets
-        histories = download_voting_histories()
+        histories = getSession57HouseLegislatureMemberVotingHistory()
         @test length(histories) == 62
         @test sum(v -> size(v, 1), values(histories)) == 67945
         @test size(histories["ALLEN"], 1) == 277
