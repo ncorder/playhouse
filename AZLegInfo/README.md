@@ -5,7 +5,7 @@ For the first semester of my honors thesis I am hoping to build a Julia package 
 
 ## Extracting votes from PDFs
 
-- `download_voting_histories(url)` downloads a .zip of Member Voting History PDFs and returns a `Dict` from each legislator's name (as printed after "Member:", e.g. `"ALLEN"`, `"CONTRERAS L"`) to their votes. The zip and its extracted PDFs are temporary and deleted when the function returns. SharePoint/OneDrive links must be shared with "Anyone with the link"; a local zip works as a `file://` URL.
+- `download_voting_histories()` downloads `57L 2R Member Voting History.zip` from the [AZLegInfo datasets repository](https://codeberg.org/AZLegInfo/datasets) and returns a `Dict` from each legislator's name (as printed after "Member:", e.g. `"ALLEN"`, `"CONTRERAS L"`) to their votes. The zip and its extracted PDFs are temporary and deleted when the function returns. Pass a URL to read another zip; a local zip works as a `file://` URL.
 - `extract_voting_history(path)` reads a House Member Voting History PDF into a DataFrame with one row per vote: member, bill, chapter, short title, new ("NOW:") title, vote, vote type, date, and the ayes/nays/not voting/excused/vacant tally. It warns if its counts differ from the totals printed at the end of the PDF.
 - `extract_tables_from_pdf(path; columns=nothing)` is the general table extractor underneath it. Pass `columns` (x positions in points where one column ends and the next begins) when the guessed columns are wrong.
 
@@ -20,7 +20,7 @@ JULIA_COPY_STACKS=1 julia --project
 
 ```julia
 using AZLegInfo, DataFrames
-histories = download_voting_histories("https://example.sharepoint.com/:u:/g/personal/...")  # link to the .zip
+histories = download_voting_histories()
 histories["ALLEN"]                        # Allen's 277 votes
 votes = reduce(vcat, values(histories))   # every legislator's votes in one DataFrame
 ```

@@ -81,7 +81,6 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
                 "/histories.zip" => (200, read(histories_zip)),
                 "/duplicate.zip" => (200, read(duplicate_zip)),
                 "/report.pdf" => (200, read(data("votes_ruled.pdf"))),
-                "/private.zip" => (403, "Forbidden"),
             )
             port, socket = listenany(ip"127.0.0.1", 49152)
             close(socket)
@@ -110,7 +109,6 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
                 withenv("TMPDIR" => scratch, "TMP" => scratch, "TEMP" => scratch) do
                     @test download_voting_histories(file_url(histories_zip)) == histories
 
-                    @test occursin("Anyone with the link", error_message(() -> download_voting_histories("$base/private.zip")))
                     @test occursin("404", error_message(() -> download_voting_histories("$base/missing.zip")))
                     @test occursin("Not a zip file", error_message(() -> download_voting_histories("$base/report.pdf")))
                     @test occursin("Two PDFs in the zip are for TESTMEMBER",
