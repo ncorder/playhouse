@@ -407,7 +407,7 @@ function extract_voting_history(pdf_path::AbstractString)
 end
 
 function download_voting_histories(
-    url::AbstractString="https://codeberg.org/AZLegInfo/datasets/raw/branch/main/57L%202R%20Member%20Voting%20History.zip",
+    url::AbstractString="https://codeberg.org/AZLegInfo/datasets/raw/branch/main/57L2RMemberVotingHistory.zip",
 )
     """
     Downloads a .zip of Member Voting History PDFs and reads every legislator's votes
@@ -416,7 +416,7 @@ function download_voting_histories(
     directory; both are deleted when the function returns, even on error.
     Every .pdf in the zip, in any folder, is read with extract_voting_history.
 
-    By default it downloads "57L 2R Member Voting History.zip" (57th
+    By default it downloads 57L2RMemberVotingHistory.zip (57th
     Legislature, 2nd Regular Session) from the AZLegInfo datasets repository,
     https://codeberg.org/AZLegInfo/datasets. A local zip can be read with a
     file:// URL.

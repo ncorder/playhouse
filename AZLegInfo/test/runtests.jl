@@ -122,5 +122,13 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
                 rm(scratch; recursive=true, force=true)
             end
         end
+
+        # The real dataset: https://codeberg.org/AZLegInfo/datasets
+        histories = download_voting_histories()
+        @test length(histories) == 62
+        @test sum(v -> size(v, 1), values(histories)) == 67945
+        @test size(histories["ALLEN"], 1) == 277
+        @test all(member -> all(==(member), histories[member].member), keys(histories))
+        @test haskey(histories, "PEÑA") && haskey(histories, "CONTRERAS L")
     end
 end
