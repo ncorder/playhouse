@@ -10,6 +10,7 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 JavaCall = "494afd89-becb-516b-aafa-70d2670c0337"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+p7zip_jll = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 
 [compat]
 DataFrames = "1"

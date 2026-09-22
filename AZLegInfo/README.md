@@ -5,10 +5,11 @@ For the first semester of my honors thesis I am hoping to build a Julia package 
 
 ## Extracting votes from PDFs
 
+- `download_voting_histories(url)` downloads a .zip of Member Voting History PDFs and returns a `Dict` from each legislator's name (as printed after "Member:", e.g. `"ALLEN"`, `"CONTRERAS L"`) to their votes. The zip and its extracted PDFs are temporary and deleted when the function returns. SharePoint/OneDrive links must be shared with "Anyone with the link"; a local zip works as a `file://` URL.
 - `extract_voting_history(path)` reads a House Member Voting History PDF into a DataFrame with one row per vote: member, bill, chapter, short title, new ("NOW:") title, vote, vote type, date, and the ayes/nays/not voting/excused/vacant tally. It warns if its counts differ from the totals printed at the end of the PDF.
 - `extract_tables_from_pdf(path; columns=nothing)` is the general table extractor underneath it. Pass `columns` (x positions in points where one column ends and the next begins) when the guessed columns are wrong.
 
-Both use [Tabula](https://github.com/tabulapdf/tabula-java) through JavaCall.jl, so they need:
+All three use [Tabula](https://github.com/tabulapdf/tabula-java) through JavaCall.jl, so they need:
 
 - A Java runtime (JDK 8 or newer) on your machine, with `JAVA_HOME` set if JavaCall cannot find it.
 - On Linux and macOS, Julia started with `JULIA_COPY_STACKS=1`. Otherwise JavaCall refuses to run outside Julia's root task, which includes Jupyter and Pluto. Do not set it on Windows.
@@ -19,8 +20,9 @@ JULIA_COPY_STACKS=1 julia --project
 
 ```julia
 using AZLegInfo, DataFrames
-dir = "57L 2R Member Voting History"
-votes = reduce(vcat, [extract_voting_history(joinpath(dir, f)) for f in readdir(dir) if endswith(f, ".pdf")])
+histories = download_voting_histories("https://example.sharepoint.com/:u:/g/personal/...")  # link to the .zip
+histories["ALLEN"]                        # Allen's 277 votes
+votes = reduce(vcat, values(histories))   # every legislator's votes in one DataFrame
 ```
 
-The Tabula jar (about 13 MB) is downloaded to a temporary directory the first time either function is called in a session. Reading all 62 member PDFs of the 57th Legislature, 2nd Regular Session (67,945 votes) takes about 1.5 minutes.
+The Tabula jar (about 13 MB) is downloaded to a temporary directory the first time any of them is called in a session. Reading all 62 member PDFs of the 57th Legislature, 2nd Regular Session (67,945 votes) takes about 1.5 minutes.
