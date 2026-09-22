@@ -29,6 +29,15 @@ vote_row(i) = ["SB$(1000 + i)", "appropriation; item $i", "02/$(lpad(i % 28 + 1,
         votes = unruled[startswith.(unruled.column_1, "SB"), :]
         @test [Vector(r) for r in eachrow(votes)] == vote_row.(0:79)
 
+        # Selected pages, in the order given.
+        @test extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[1, 2, 3]) == ruled
+        page2 = extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[2])
+        @test 0 < size(page2, 1) < size(ruled, 1)
+        @test !("SB1000" in page2.column_1) && !("SB1079" in page2.column_1)
+        @test extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[3, 1]) ==
+              vcat(extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[3]),
+                   extract_tables_from_pdf(data("votes_ruled.pdf"); pages=[1]))
+
         @test_throws ArgumentError extract_tables_from_pdf("does_not_exist.pdf")
     end
 

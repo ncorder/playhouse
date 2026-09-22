@@ -9,14 +9,6 @@ using DataFrames, Dates, HTTP, JSON3, JavaCall,  Downloads, p7zip_jll
 
 export getSessions, getBillId, getBillInfo, getBillPositions_JSON, extract_tables_from_pdf, extract_voting_history, download_voting_histories
 
-# Module-level so the JVM is initialized at most once per Julia session.
-# JNI does not support tearing down and recreating a JVM in the same
-# process, so this state must not be reset on every call to
-# extract_tables_from_pdf.
-const _tabula_tmpdir = Ref{Union{Nothing,String}}(nothing)
-const _tabula_jar = Ref{Union{Nothing,String}}(nothing)
-const _tabula_initialized = Ref(false)
-
 function getSessions()::DataFrame
     """
     Returns a DataFrame with information for every Arizona State Legislative Session (avaliable through the API)
@@ -90,71 +82,13 @@ function getBillPositions_JSON(billNumber::String, sessionID::Int)
     return JSON3.parse(String(resp.body))
     end
 
-const _TABULA_JAR_URL =
-    "https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar"
-
-function _cleanup_tabula()
-    tmpdir = _tabula_tmpdir[]
-
-    if tmpdir !== nothing && isdir(tmpdir)
-        try
-            rm(tmpdir; recursive=true, force=true)
-        catch err
-            @warn "Unable to remove temporary Tabula directory" exception=err
-        end
-    end
-
-    _tabula_tmpdir[] = nothing
-    _tabula_jar[] = nothing
-
-    nothing
-end
-
-function _initialize_tabula()
-    _tabula_initialized[] && return
-
-    # JavaCall.init() throws if another package already started the
-    # JVM, and the classpath can no longer be extended at that point.
-    if JavaCall.isloaded()
-        @warn "JVM was already started elsewhere; Tabula must already be on its classpath"
-        _tabula_initialized[] = true
-        return
-    end
-
-    tmpdir = mktempdir()
-    jar_path = joinpath(
-        tmpdir,
-        "tabula-1.0.5-jar-with-dependencies.jar",
-    )
-
-    try
-        Downloads.download(_TABULA_JAR_URL, jar_path)
-
-        # The classpath must be configured before JVM initialization.
-        JavaCall.addClassPath(jar_path)
-        JavaCall.init()
-
-        _tabula_tmpdir[] = tmpdir
-        _tabula_jar[] = jar_path
-        _tabula_initialized[] = true
-
-        # Register cleanup once the JVM has been initialized.
-        atexit(_cleanup_tabula)
-
-    catch
-        rm(tmpdir; recursive=true, force=true)
-        rethrow()
-    end
-
-    nothing
-end
-
-function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing)
+function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing, pages=nothing)
     """
     Extracts Tables from a PDF
 
-    The function downloads the .jar file for Tabula to a temporary location
-    so that it is automatically deleted when no longer in use.
+    The first call in a Julia session downloads the .jar file for Tabula to
+    a temporary directory, which is deleted when Julia exits, and starts
+    the JVM with it.
 
     Then it uses JavaCall to run Tabula and utilizes it to extract
     the tables from a PDF.
@@ -177,6 +111,8 @@ function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing)
           left edge of the page, where one column ends and the next
           begins. When given, every page is read in stream mode with
           these boundaries instead of guessed ones (tabula's --columns).
+        pages (optional) is a list of page numbers to read, starting at 1
+          (tabula's --pages); by default every page is read.
 
     Returns
        Tables as DataFrame, one row per table row, with columns named
@@ -188,7 +124,20 @@ function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing)
     """
     isfile(pdf_path) || throw(ArgumentError("No such file: $pdf_path"))
 
-    _initialize_tabula()
+    # The JVM can be started only once per Julia session and its classpath
+    # is fixed from then on, so Tabula is added before the first start.
+    function initialize_tabula()
+        JavaCall.isloaded() && return
+        jar_path = joinpath(mktempdir(), "tabula-1.0.5-jar-with-dependencies.jar")
+        Downloads.download(
+            "https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar",
+            jar_path,
+        )
+        JavaCall.addClassPath(jar_path)
+        JavaCall.init()
+    end
+
+    initialize_tabula()
 
     # JNI resolves methods by exact signature, so every jcall needs the
     # concrete Java class; a bare JavaObject has no signature.
@@ -253,13 +202,21 @@ function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing)
         end
 
         extractor = ObjectExtractor((PDDocument,), document)
-        pages = jcall(extractor, "extract", PageIterator, ())
+
+        function each_page(f)
+            if pages === nothing
+                iterator = jcall(extractor, "extract", PageIterator, ())
+                while Bool(jcall(iterator, "hasNext", jboolean, ()))
+                    f(jcall(iterator, "next", Page, ()))
+                end
+            else
+                foreach(n -> f(jcall(extractor, "extract", Page, (jint,), n)), pages)
+            end
+        end
 
         all_rows = Vector{Vector{String}}()
 
-        while Bool(jcall(pages, "hasNext", jboolean, ()))
-            page = jcall(pages, "next", Page, ())
-
+        each_page() do page
             tables, stream = page_tables(page)
             for table in tables
                 for cells in jlist(jcall(table, "getRows", JList, ()), JList)
@@ -307,7 +264,7 @@ end
 
 const _BILL_CELL = r"^((?:HB|SB|HCR|SCR|HCM|SCM|HJR|SJR|HR|SR|HM|SM)\d{4})(?:\s+(.+))?$"
 const _VOTE_LINE = r"^(\S+)\s+(.+?)\s+(\d\d/\d\d/\d\d)\s+(\d+)-(\d+)-(\d+)-(\d+)-(\d+)$"
-const _TOTALS = r"AYES\s*=\s*(\d+)\s*NAYS\s*=\s*(\d+)\s*NV\s*=\s*(\d+)\s*EXC\s*=\s*(\d+)\s*TOTAL VOTES\s*=\s*(\d+)"
+const _TOTALS = r"AYES\s*=\s*(\d+)\s*NAYS\s*=\s*(\d+)\s*NV\s*=\s*(\d+)\s*EXC\s*=\s*(\d+)\s*TOTAL\s*VOTES\s*=\s*(\d+)"
 
 function extract_voting_history(pdf_path::AbstractString)
     """
@@ -333,26 +290,19 @@ function extract_voting_history(pdf_path::AbstractString)
     Citations:
       Code generated by Claude Code, Anthropic, September 22, 2026, https://claude.ai/code/session_01SQ79sYVPmqwp7yFkriCVsL.
     """
+    # The "Member:" line can run past x = 160 (below), where fixed columns
+    # would split words, so it is read from page 1 with guessed columns.
+    member = nothing
+    for row in eachrow(extract_tables_from_pdf(pdf_path; pages=[1]))
+        m = match(r"^Member:\s*(.+)$", join(filter(!isempty, collect(row)), " "))
+        m === nothing || (member = String(m.captures[1]); break)
+    end
+    member === nothing && throw(ArgumentError("Not a Member Voting History PDF: $pdf_path"))
+
     # Bill number (x = 36) and chapter (x = 99) sit left of x = 160; the
     # short title, NOW: line and vote lines start at x = 168. Guessed
     # columns would shift with the width of the member's name.
     rows = extract_tables_from_pdf(pdf_path; columns=[160])
-
-    # The member line and the totals line straddle x = 160, so they are
-    # read from PDFBox's plain text of the whole document instead.
-    JFile = @jimport java.io.File
-    PDDocument = @jimport org.apache.pdfbox.pdmodel.PDDocument
-    PDFTextStripper = @jimport org.apache.pdfbox.text.PDFTextStripper
-    document = jcall(PDDocument, "load", PDDocument, (JFile,), JFile((JString,), abspath(pdf_path)))
-    text = try
-        jcall(PDFTextStripper(()), "getText", JString, (PDDocument,), document)
-    finally
-        jcall(document, "close", Nothing, ())
-    end
-
-    m = match(r"Member:[ \t]*([^\r\n]+)", text)
-    m === nothing && throw(ArgumentError("Not a Member Voting History PDF: $pdf_path"))
-    member = String(strip(m.captures[1]))
 
     votes = DataFrame(
         member=String[], bill=String[], chapter=String[], short_title=String[],
@@ -361,6 +311,7 @@ function extract_voting_history(pdf_path::AbstractString)
     )
 
     bill = chapter = short_title = now_title = ""
+    totals_line = ""
     in_header = false
 
     for (left, right) in zip(rows.column_1, rows.column_2)
@@ -372,7 +323,9 @@ function extract_voting_history(pdf_path::AbstractString)
         elseif isempty(left) && (isempty(right) || occursin(r"^\d+$", right))
             continue  # blank line or page number
         elseif startswith(left, "AYES")
-            break  # totals line, checked below
+            # Split at x = 160, possibly mid-word; _TOTALS ignores spacing.
+            totals_line = left * right
+            break
         elseif (b = match(_BILL_CELL, left)) !== nothing
             bill, chapter = b.captures[1], something(b.captures[2], "")
             short_title, now_title = right, ""
@@ -394,7 +347,7 @@ function extract_voting_history(pdf_path::AbstractString)
     end
 
     # The PDF's own totals, which leave out committee codes (AB, P).
-    t = match(_TOTALS, text)
+    t = match(_TOTALS, totals_line)
     if t === nothing
         @warn "No vote totals found to check against" pdf_path
     else
@@ -436,7 +389,7 @@ function download_voting_histories(
     # so a legislator with no votes is named from the PDF's text.
     function member_name(pdf, votes)
         isempty(votes) || return votes.member[1]
-        for row in eachrow(extract_tables_from_pdf(pdf))
+        for row in eachrow(extract_tables_from_pdf(pdf; pages=[1]))
             m = match(r"^Member:\s*(.+)$", join(filter(!isempty, collect(row)), " "))
             m === nothing || return String(m.captures[1])
         end

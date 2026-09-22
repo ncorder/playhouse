@@ -7,7 +7,7 @@ For the first semester of my honors thesis I am hoping to build a Julia package 
 
 - `download_voting_histories()` downloads `57L2RMemberVotingHistory.zip` (57th Legislature, 2nd Regular Session) from the [AZLegInfo datasets repository](https://codeberg.org/AZLegInfo/datasets) and returns a `Dict` from each legislator's name (as printed after "Member:", e.g. `"ALLEN"`, `"CONTRERAS L"`) to their votes. The zip and its extracted PDFs are temporary and deleted when the function returns. Pass a URL to read another zip; a local zip works as a `file://` URL.
 - `extract_voting_history(path)` reads a House Member Voting History PDF into a DataFrame with one row per vote: member, bill, chapter, short title, new ("NOW:") title, vote, vote type, date, and the ayes/nays/not voting/excused/vacant tally. It warns if its counts differ from the totals printed at the end of the PDF.
-- `extract_tables_from_pdf(path; columns=nothing)` is the general table extractor underneath it. Pass `columns` (x positions in points where one column ends and the next begins) when the guessed columns are wrong.
+- `extract_tables_from_pdf(path; columns=nothing, pages=nothing)` is the general table extractor underneath it, and the only function that talks to Tabula. Pass `columns` (x positions in points where one column ends and the next begins) when the guessed columns are wrong, and `pages` (e.g. `[1]`) to read only some pages.
 
 All three use [Tabula](https://github.com/tabulapdf/tabula-java) through JavaCall.jl, so they need:
 
