@@ -5,9 +5,9 @@ AZLegInfo is a package to get data conerning the Arizona State Legislature, and 
 """
 
 module AZLegInfo
-using DataFrames, HTTP, JSON3, JavaCall,  Downloads
+using DataFrames, Dates, HTTP, JSON3, JavaCall,  Downloads
 
-export getSessions, getBillId, getBillInfo, getBillPositions_JSON, extract_tables_from_pdf
+export getSessions, getBillId, getBillInfo, getBillPositions_JSON, extract_tables_from_pdf, extract_voting_history
 
 # Module-level so the JVM is initialized at most once per Julia session.
 # JNI does not support tearing down and recreating a JVM in the same
@@ -90,7 +90,66 @@ function getBillPositions_JSON(billNumber::String, sessionID::Int)
     return JSON3.parse(String(resp.body))
     end
 
-function extract_tables_from_pdf(pdf_path::AbstractString)
+const _TABULA_JAR_URL =
+    "https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar"
+
+function _cleanup_tabula()
+    tmpdir = _tabula_tmpdir[]
+
+    if tmpdir !== nothing && isdir(tmpdir)
+        try
+            rm(tmpdir; recursive=true, force=true)
+        catch err
+            @warn "Unable to remove temporary Tabula directory" exception=err
+        end
+    end
+
+    _tabula_tmpdir[] = nothing
+    _tabula_jar[] = nothing
+
+    nothing
+end
+
+function _initialize_tabula()
+    _tabula_initialized[] && return
+
+    # JavaCall.init() throws if another package already started the
+    # JVM, and the classpath can no longer be extended at that point.
+    if JavaCall.isloaded()
+        @warn "JVM was already started elsewhere; Tabula must already be on its classpath"
+        _tabula_initialized[] = true
+        return
+    end
+
+    tmpdir = mktempdir()
+    jar_path = joinpath(
+        tmpdir,
+        "tabula-1.0.5-jar-with-dependencies.jar",
+    )
+
+    try
+        Downloads.download(_TABULA_JAR_URL, jar_path)
+
+        # The classpath must be configured before JVM initialization.
+        JavaCall.addClassPath(jar_path)
+        JavaCall.init()
+
+        _tabula_tmpdir[] = tmpdir
+        _tabula_jar[] = jar_path
+        _tabula_initialized[] = true
+
+        # Register cleanup once the JVM has been initialized.
+        atexit(_cleanup_tabula)
+
+    catch
+        rm(tmpdir; recursive=true, force=true)
+        rethrow()
+    end
+
+    nothing
+end
+
+function extract_tables_from_pdf(pdf_path::AbstractString; columns=nothing)
     """
     Extracts Tables from a PDF
 
@@ -103,7 +162,9 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
     It expects the PDFs to follow the provided format for legislative
     votes. Each page is first read in lattice mode (tables drawn with
     ruling lines); pages without ruled tables fall back to stream mode
-    (whitespace-aligned columns) on each detected table area.
+    (whitespace-aligned columns) over the whole page, so every line of
+    text on the page ends up in some row. For Member Voting History
+    PDFs, extract_voting_history turns these rows into one row per vote.
 
     On Linux and macOS, Julia must be started with the environment
     variable JULIA_COPY_STACKS=1 (e.g. `JULIA_COPY_STACKS=1 julia`),
@@ -112,6 +173,10 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
 
     Expects:
         pdf_path is the path to the pdf
+        columns (optional) is a list of x positions, in points from the
+          left edge of the page, where one column ends and the next
+          begins. When given, every page is read in stream mode with
+          these boundaries instead of guessed ones (tabula's --columns).
 
     Returns
        Tables as DataFrame, one row per table row, with columns named
@@ -123,66 +188,7 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
     """
     isfile(pdf_path) || throw(ArgumentError("No such file: $pdf_path"))
 
-    TABULA_JAR_URL =
-        "https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar"
-
-    function cleanup_tabula()
-        tmpdir = _tabula_tmpdir[]
-
-        if tmpdir !== nothing && isdir(tmpdir)
-            try
-                rm(tmpdir; recursive=true, force=true)
-            catch err
-                @warn "Unable to remove temporary Tabula directory" exception=err
-            end
-        end
-
-        _tabula_tmpdir[] = nothing
-        _tabula_jar[] = nothing
-
-        nothing
-    end
-
-    function initialize_tabula()
-        _tabula_initialized[] && return
-
-        # JavaCall.init() throws if another package already started the
-        # JVM, and the classpath can no longer be extended at that point.
-        if JavaCall.isloaded()
-            @warn "JVM was already started elsewhere; Tabula must already be on its classpath"
-            _tabula_initialized[] = true
-            return
-        end
-
-        tmpdir = mktempdir()
-        jar_path = joinpath(
-            tmpdir,
-            "tabula-1.0.5-jar-with-dependencies.jar",
-        )
-
-        try
-            Downloads.download(TABULA_JAR_URL, jar_path)
-
-            # The classpath must be configured before JVM initialization.
-            JavaCall.addClassPath(jar_path)
-            JavaCall.init()
-
-            _tabula_tmpdir[] = tmpdir
-            _tabula_jar[] = jar_path
-            _tabula_initialized[] = true
-
-            # Register cleanup once the JVM has been initialized.
-            atexit(cleanup_tabula)
-
-        catch
-            rm(tmpdir; recursive=true, force=true)
-            rethrow()
-        end
-
-        nothing
-    end
-
-    initialize_tabula()
+    _initialize_tabula()
 
     # JNI resolves methods by exact signature, so every jcall needs the
     # concrete Java class; a bare JavaObject has no signature.
@@ -195,13 +201,12 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
     Page = @jimport technology.tabula.Page
     Table = @jimport technology.tabula.Table
     RectangularTextContainer = @jimport technology.tabula.RectangularTextContainer
-    Rectangle = @jimport technology.tabula.Rectangle
+    TextElement = @jimport technology.tabula.TextElement
+    TextChunk = @jimport technology.tabula.TextChunk
     SpreadsheetExtractionAlgorithm =
         @jimport technology.tabula.extractors.SpreadsheetExtractionAlgorithm
     BasicExtractionAlgorithm =
         @jimport technology.tabula.extractors.BasicExtractionAlgorithm
-    NurminenDetectionAlgorithm =
-        @jimport technology.tabula.detectors.NurminenDetectionAlgorithm
 
     # PDDocument.load has no String overload, only File/InputStream/byte[].
     pdf_file = JFile((JString,), abspath(pdf_path))
@@ -213,25 +218,38 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
     try
         spreadsheet = SpreadsheetExtractionAlgorithm(())
         basic = BasicExtractionAlgorithm(())
-        detector = NurminenDetectionAlgorithm(())
 
         # Lattice mode for tables drawn with ruling lines; if it finds none,
-        # fall back to stream mode (whitespace-aligned columns) on each
-        # detected table area, so titles and headers outside the table
-        # don't distort column detection.
+        # stream mode (whitespace-aligned columns) over the whole page.
+        # Stream mode is not restricted to a detected table area because
+        # detection clips rows at the top and bottom of real vote PDFs.
+        if columns !== nothing
+            JFloat = @jimport java.lang.Float
+            ArrayList = @jimport java.util.ArrayList
+            boundaries = ArrayList(())
+            for x in columns
+                jcall(boundaries, "add", jboolean, (JObject,), convert(JFloat, x))
+            end
+        end
+
         function page_tables(page)
+            if columns !== nothing
+                return jlist(jcall(basic, "extract", JList, (Page, JList), page, boundaries), Table), true
+            end
             tables = filter(
                 t -> jcall(t, "getRowCount", jint, ()) > 0,
                 jlist(jcall(spreadsheet, "extract", JList, (Page,), page), Table),
             )
-            isempty(tables) || return tables
+            isempty(tables) || return tables, false
+            jlist(jcall(basic, "extract", JList, (Page,), page), Table), true
+        end
 
-            areas = jlist(jcall(detector, "detect", JList, (Page,), page), Rectangle)
-            regions = isempty(areas) ? [page] :
-                [jcall(page, "getArea", Page, (Rectangle,), a) for a in areas]
-
-            reduce(vcat,
-                   [jlist(jcall(basic, "extract", JList, (Page,), r), Table) for r in regions])
+        # Stream mode joins the words of a cell without the gaps between
+        # them ("Y   FINAL" becomes "YFINAL"); re-split them into words.
+        function stream_cell_text(cell)
+            elements = jcall(cell, "getTextElements", JList, ())
+            words = jlist(jcall(TextElement, "mergeWords", JList, (JList,), elements), TextChunk)
+            String(strip(replace(join([jcall(w, "getText", JString, ()) for w in words], " "), r"\s+" => " ")))
         end
 
         extractor = ObjectExtractor((PDDocument,), document)
@@ -242,10 +260,12 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
         while Bool(jcall(pages, "hasNext", jboolean, ()))
             page = jcall(pages, "next", Page, ())
 
-            for table in page_tables(page)
+            tables, stream = page_tables(page)
+            for table in tables
                 for cells in jlist(jcall(table, "getRows", JList, ()), JList)
                     push!(all_rows, [
-                        replace(jcall(cell, "getText", JString, ()), '\r' => ' ')
+                        stream ? stream_cell_text(cell) :
+                            replace(jcall(cell, "getText", JString, ()), '\r' => ' ')
                         for cell in jlist(cells, RectangularTextContainer)
                     ])
                 end
@@ -285,6 +305,105 @@ function extract_tables_from_pdf(pdf_path::AbstractString)
     end
 end
 
+const _BILL_CELL = r"^((?:HB|SB|HCR|SCR|HCM|SCM|HJR|SJR|HR|SR|HM|SM)\d{4})(?:\s+(.+))?$"
+const _VOTE_LINE = r"^(\S+)\s+(.+?)\s+(\d\d/\d\d/\d\d)\s+(\d+)-(\d+)-(\d+)-(\d+)-(\d+)$"
+const _TOTALS = r"AYES\s*=\s*(\d+)\s*NAYS\s*=\s*(\d+)\s*NV\s*=\s*(\d+)\s*EXC\s*=\s*(\d+)\s*TOTAL VOTES\s*=\s*(\d+)"
 
+function extract_voting_history(pdf_path::AbstractString)
+    """
+    Extracts every vote from a House Member Voting History PDF
+
+    Each bill in the PDF is a bill line (bill number, chapter, short title
+    and sponsor), an optional "NOW:" line with the bill's new title, and
+    one line per vote (vote, vote type, date, and the
+    A-N-NV-EXC-VAC tally). This turns those lines into one row per vote,
+    and warns if the Y/N/NV/EXC counts differ from the totals printed at
+    the end of the PDF.
+
+    Expects:
+        pdf_path is the path to a Member Voting History pdf
+
+    Returns
+        A DataFrame with one row per vote and the columns member, bill,
+        chapter ("V" = vetoed, "" = none, "1 E" = chapter 1 with an
+        emergency clause), short_title, now_title ("" = none), vote
+        (Y, N, NV, EXC, AB, P, ...), vote_type (FINAL, THIRD, a
+        committee, ...), date, ayes, nays, not_voting, excused, and vacant.
+
+    Citations:
+      Code generated by Claude Code, Anthropic, September 22, 2026, https://claude.ai/code/session_01SQ79sYVPmqwp7yFkriCVsL.
+    """
+    # Bill number (x = 36) and chapter (x = 99) sit left of x = 160; the
+    # short title, NOW: line and vote lines start at x = 168. Guessed
+    # columns would shift with the width of the member's name.
+    rows = extract_tables_from_pdf(pdf_path; columns=[160])
+
+    # The member line and the totals line straddle x = 160, so they are
+    # read from PDFBox's plain text of the whole document instead.
+    JFile = @jimport java.io.File
+    PDDocument = @jimport org.apache.pdfbox.pdmodel.PDDocument
+    PDFTextStripper = @jimport org.apache.pdfbox.text.PDFTextStripper
+    document = jcall(PDDocument, "load", PDDocument, (JFile,), JFile((JString,), abspath(pdf_path)))
+    text = try
+        jcall(PDFTextStripper(()), "getText", JString, (PDDocument,), document)
+    finally
+        jcall(document, "close", Nothing, ())
+    end
+
+    m = match(r"Member:[ \t]*([^\r\n]+)", text)
+    m === nothing && throw(ArgumentError("Not a Member Voting History PDF: $pdf_path"))
+    member = String(strip(m.captures[1]))
+
+    votes = DataFrame(
+        member=String[], bill=String[], chapter=String[], short_title=String[],
+        now_title=String[], vote=String[], vote_type=String[], date=Date[],
+        ayes=Int[], nays=Int[], not_voting=Int[], excused=Int[], vacant=Int[],
+    )
+
+    bill = chapter = short_title = now_title = ""
+    in_header = false
+
+    for (left, right) in zip(rows.column_1, rows.column_2)
+        # Every page repeats the title, legend and column headings.
+        if startswith(right, "Member Voting History")
+            in_header = true
+        elseif in_header
+            in_header = right != "Vote/Vote Type"
+        elseif isempty(left) && (isempty(right) || occursin(r"^\d+$", right))
+            continue  # blank line or page number
+        elseif startswith(left, "AYES")
+            break  # totals line, checked below
+        elseif (b = match(_BILL_CELL, left)) !== nothing
+            bill, chapter = b.captures[1], something(b.captures[2], "")
+            short_title, now_title = right, ""
+        elseif startswith(right, "NOW:")
+            now_title = strip(right[5:end])
+        elseif (v = match(_VOTE_LINE, right)) !== nothing
+            isempty(bill) && error("Vote before any bill in $pdf_path: $right")
+            push!(votes, (
+                member, bill, chapter, short_title, now_title,
+                v.captures[1], v.captures[2],
+                Date(v.captures[3], dateformat"mm/dd/yy") + Year(2000),
+                parse.(Int, v.captures[4:8])...,
+            ))
+        elseif isempty(now_title)
+            short_title = join(filter(!isempty, [short_title, left, right]), " ")
+        else
+            now_title = join(filter(!isempty, [now_title, left, right]), " ")
+        end
+    end
+
+    # The PDF's own totals, which leave out committee codes (AB, P).
+    t = match(_TOTALS, text)
+    if t === nothing
+        @warn "No vote totals found to check against" pdf_path
+    else
+        expected = parse.(Int, t.captures[1:4])
+        parsed = [count(==(code), votes.vote) for code in ("Y", "N", "NV", "EXC")]
+        parsed == expected || @warn "Parsed vote counts differ from the PDF's totals" pdf_path expected parsed
+    end
+
+    votes
+end
 
 end # module

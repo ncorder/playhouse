@@ -1,0 +1,80 @@
+bill	chapter	short_title	now_title	vote	vote_type	date	ayes	nays	not_voting	excused	vacant
+HB2003	V	test subject 0; requirements; study (Member0)		Y	THIRD	2026-01-10	30	20	5	0	0
+HB2004		test subject 1; requirements; study (Member1)		N	FINAL	2026-02-10	30	20	5	0	0
+HB2004		test subject 1; requirements; study (Member1)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+HB2005	191	test subject 2; requirements; study (Member2)		NV	ED	2026-03-10	30	20	5	0	0
+HB2005	191	test subject 2; requirements; study (Member2)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+HB2005	191	test subject 2; requirements; study (Member2)		AB	THIRD	2026-05-12	32	18	5	0	0
+HB2006	1 E	test subject 3; requirements; study (Member3)	new subject 3; revisions	EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+HB2007	V	test subject 4; requirements; study (Member4)		AB	COW MOTION	2026-05-10	30	20	5	0	0
+HB2007	V	test subject 4; requirements; study (Member4)		P	THIRD	2026-06-11	31	19	5	1	0
+HB2008		test subject 5; requirements; study (Member0)		P	RULES	2026-06-10	30	20	5	0	0
+HB2008		test subject 5; requirements; study (Member0)		Y	FINAL	2026-01-11	31	19	5	1	0
+HB2008		test subject 5; requirements; study (Member0)		N	THIRD (R)	2026-02-12	32	18	5	0	0
+HB2009	191	test subject 6; requirements; study (Member1)		Y	THIRD	2026-01-10	30	20	5	0	0
+HB2010	1 E	test subject 7; requirements; study (Member2)		N	FINAL	2026-02-10	30	20	5	0	0
+HB2010	1 E	test subject 7; requirements; study (Member2)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+HB2011	V	test subject 8; requirements; study (Member3)		NV	ED	2026-03-10	30	20	5	0	0
+HB2011	V	test subject 8; requirements; study (Member3)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+HB2011	V	test subject 8; requirements; study (Member3)		AB	THIRD	2026-05-12	32	18	5	0	0
+HB2012		test subject 9; requirements; study (Member4)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+HB2013	191	test subject 10; requirements; study (Member0)	new subject 10; revisions	AB	COW MOTION	2026-05-10	30	20	5	0	0
+HB2013	191	test subject 10; requirements; study (Member0)	new subject 10; revisions	P	THIRD	2026-06-11	31	19	5	1	0
+HB2014	1 E	test subject 11; requirements; study (Member1)		P	RULES	2026-06-10	30	20	5	0	0
+HB2014	1 E	test subject 11; requirements; study (Member1)		Y	FINAL	2026-01-11	31	19	5	1	0
+HB2014	1 E	test subject 11; requirements; study (Member1)		N	THIRD (R)	2026-02-12	32	18	5	0	0
+HB2015	V	test subject 12; requirements; study (Member2)		Y	THIRD	2026-01-10	30	20	5	0	0
+HB2016		test subject 13; requirements; study (Member3)		N	FINAL	2026-02-10	30	20	5	0	0
+HB2016		test subject 13; requirements; study (Member3)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+HB2017	191	test subject 14; requirements; study (Member4)		NV	ED	2026-03-10	30	20	5	0	0
+HB2017	191	test subject 14; requirements; study (Member4)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+HB2017	191	test subject 14; requirements; study (Member4)		AB	THIRD	2026-05-12	32	18	5	0	0
+HB2018	1 E	test subject 15; requirements; study (Member0)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+HB2019	V	test subject 16; requirements; study (Member1)		AB	COW MOTION	2026-05-10	30	20	5	0	0
+HB2019	V	test subject 16; requirements; study (Member1)		P	THIRD	2026-06-11	31	19	5	1	0
+HB2020		test subject 17; requirements; study (Member2)	new subject 17; revisions	P	RULES	2026-06-10	30	20	5	0	0
+HB2020		test subject 17; requirements; study (Member2)	new subject 17; revisions	Y	FINAL	2026-01-11	31	19	5	1	0
+HB2020		test subject 17; requirements; study (Member2)	new subject 17; revisions	N	THIRD (R)	2026-02-12	32	18	5	0	0
+HB2021	191	test subject 18; requirements; study (Member3)		Y	THIRD	2026-01-10	30	20	5	0	0
+HB2022	1 E	test subject 19; requirements; study (Member4)		N	FINAL	2026-02-10	30	20	5	0	0
+HB2022	1 E	test subject 19; requirements; study (Member4)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+HB2023	V	test subject 20; requirements; study (Member0)		NV	ED	2026-03-10	30	20	5	0	0
+HB2023	V	test subject 20; requirements; study (Member0)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+HB2023	V	test subject 20; requirements; study (Member0)		AB	THIRD	2026-05-12	32	18	5	0	0
+HB2024		test subject 21; requirements; study (Member1)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+HB2025	191	test subject 22; requirements; study (Member2)		AB	COW MOTION	2026-05-10	30	20	5	0	0
+HB2025	191	test subject 22; requirements; study (Member2)		P	THIRD	2026-06-11	31	19	5	1	0
+HB2026	1 E	test subject 23; requirements; study (Member3)		P	RULES	2026-06-10	30	20	5	0	0
+HB2026	1 E	test subject 23; requirements; study (Member3)		Y	FINAL	2026-01-11	31	19	5	1	0
+HB2026	1 E	test subject 23; requirements; study (Member3)		N	THIRD (R)	2026-02-12	32	18	5	0	0
+HB2027	V	test subject 24; requirements; study (Member4)	new subject 24; revisions	Y	THIRD	2026-01-10	30	20	5	0	0
+HB2028		test subject 25; requirements; study (Member0)		N	FINAL	2026-02-10	30	20	5	0	0
+HB2028		test subject 25; requirements; study (Member0)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+HB2029	191	test subject 26; requirements; study (Member1)		NV	ED	2026-03-10	30	20	5	0	0
+HB2029	191	test subject 26; requirements; study (Member1)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+HB2029	191	test subject 26; requirements; study (Member1)		AB	THIRD	2026-05-12	32	18	5	0	0
+HB2030	1 E	test subject 27; requirements; study (Member2)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+HB2031	V	test subject 28; requirements; study (Member3)		AB	COW MOTION	2026-05-10	30	20	5	0	0
+HB2031	V	test subject 28; requirements; study (Member3)		P	THIRD	2026-06-11	31	19	5	1	0
+HB2032		test subject 29; requirements; study (Member4)		P	RULES	2026-06-10	30	20	5	0	0
+HB2032		test subject 29; requirements; study (Member4)		Y	FINAL	2026-01-11	31	19	5	1	0
+HB2032		test subject 29; requirements; study (Member4)		N	THIRD (R)	2026-02-12	32	18	5	0	0
+SCR1031	191	test subject 30; requirements; study (Member0)		Y	THIRD	2026-01-10	30	20	5	0	0
+SCR1032	1 E	test subject 31; requirements; study (Member1)	new subject 31; revisions	N	FINAL	2026-02-10	30	20	5	0	0
+SCR1032	1 E	test subject 31; requirements; study (Member1)	new subject 31; revisions	NV	THIRD (R)	2026-03-11	31	19	5	1	0
+SCR1033	V	test subject 32; requirements; study (Member2)		NV	ED	2026-03-10	30	20	5	0	0
+SCR1033	V	test subject 32; requirements; study (Member2)		EXC	COW MOTION	2026-04-11	31	19	5	1	0
+SCR1033	V	test subject 32; requirements; study (Member2)		AB	THIRD	2026-05-12	32	18	5	0	0
+SCR1034		test subject 33; requirements; study (Member3)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
+SCR1035	191	test subject 34; requirements; study (Member4)		AB	COW MOTION	2026-05-10	30	20	5	0	0
+SCR1035	191	test subject 34; requirements; study (Member4)		P	THIRD	2026-06-11	31	19	5	1	0
+SCR1036	1 E	test subject 35; requirements; study (Member0)		P	RULES	2026-06-10	30	20	5	0	0
+SCR1036	1 E	test subject 35; requirements; study (Member0)		Y	FINAL	2026-01-11	31	19	5	1	0
+SCR1036	1 E	test subject 35; requirements; study (Member0)		N	THIRD (R)	2026-02-12	32	18	5	0	0
+SCR1037	V	test subject 36; requirements; study (Member1)		Y	THIRD	2026-01-10	30	20	5	0	0
+SCR1038		test subject 37; requirements; study (Member2)		N	FINAL	2026-02-10	30	20	5	0	0
+SCR1038		test subject 37; requirements; study (Member2)		NV	THIRD (R)	2026-03-11	31	19	5	1	0
+SCR1039	191	test subject 38; requirements; study (Member3)	new subject 38; revisions	NV	ED	2026-03-10	30	20	5	0	0
+SCR1039	191	test subject 38; requirements; study (Member3)	new subject 38; revisions	EXC	COW MOTION	2026-04-11	31	19	5	1	0
+SCR1039	191	test subject 38; requirements; study (Member3)	new subject 38; revisions	AB	THIRD	2026-05-12	32	18	5	0	0
+SCR1040	1 E	test subject 39; requirements; study (Member4)		EXC	THIRD (R)	2026-04-10	30	20	5	0	0
