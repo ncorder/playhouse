@@ -1,0 +1,17 @@
+name = "AZLegInfo"
+uuid = "19daf8e9-0870-4f25-9c1d-f38ed379fe1e"
+authors = ["Mercy COrder"]
+version = "0.0.1"
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Gumbo = "708ec375-b3d6-5a57-a7ce-8257bf98657a"
+PDFIO = "4d0d745f-9d9a-592e-8d18-1ad8a0f42b92"
+ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
+
+[compat]
