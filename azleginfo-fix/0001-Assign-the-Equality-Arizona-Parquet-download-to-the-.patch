@@ -1,0 +1,34 @@
+From c7ac8ee9d08b17e750c6ac2088d5d44431a70d8d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 26 Sep 2026 00:35:12 +0000
+Subject: [PATCH] Assign the Equality Arizona Parquet download to the right
+ variable
+
+When equalityArizona2022SineDieReport.parquet downloads successfully, its
+contents were stored in session57HouseLegislativeMemberVotingHistory, so
+the exported equalityArizona2022SineDieReport stayed undefined. This only
+shows up once the Parquet file exists in the datasets repository; today
+it returns 404 and the fallback, which uses the right name, runs instead.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QWRPxicSd3Kac8FLRGwu74
+---
+ src/AZLegInfo.jl | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/AZLegInfo.jl b/src/AZLegInfo.jl
+index 2920f58..8265917 100644
+--- a/src/AZLegInfo.jl
++++ b/src/AZLegInfo.jl
+@@ -166,7 +166,7 @@ try
+   tempPath, io= mktemp()
+   close(io)
+   Downloads.download("https://codeberg.org/AZLegInfo/datasets/raw/branch/main/equalityArizona2022SineDieReport.parquet", tempPath)
+-  global session57HouseLegislativeMemberVotingHistory = DataFrame(Parquet.read_parquet(tempPath))
++  global equalityArizona2022SineDieReport = DataFrame(Parquet.read_parquet(tempPath))
+ catch e
+   println("Error Downloading equalityArizona2022SineDieReport: ", e)
+   global equalityArizona2022SineDieReport = getEqualityArizona2022SineDieReport()
+-- 
+2.43.0
+
