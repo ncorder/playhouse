@@ -5,7 +5,7 @@ AZLegInfo is a package to get data conerning the Arizona State Legislature, and 
 """
 
 module AZLegInfo
-using DataFrames, HTTP, JSON3, Downloads, Dates, CSV, Gumbo, NamedArrays, Parquet
+using DataFrames, HTTP, JSON3, Downloads, Dates, CSV, Gumbo, NamedArrays, Parquet2
 
 export getSessions, getBillID, getBillInfo, getBillPositions_JSON, session57HouseLegislativeMemberVotingHistory, equalityArizona2022SineDieReport, getBillIntroducedVersionText, getSession57HouseLegislativeMemberVotingHistory_OneHotEncoding
 
@@ -166,9 +166,9 @@ try
   tempPath, io= mktemp()
   close(io)
   Downloads.download("https://codeberg.org/AZLegInfo/datasets/raw/branch/main/equalityArizona2022SineDieReport.parquet", tempPath)
-  global session57HouseLegislativeMemberVotingHistory = DataFrame(Parquet.read_parquet(tempPath))
+  global equalityArizona2022SineDieReport = DataFrame(Parquet2.dataset(tempPath))
 catch e
-  println("Error Downloading equalityArizona2022SineDieReport: ", e)
+  println("Error Loading equalityArizona2022SineDieReport: ", e)
   global equalityArizona2022SineDieReport = getEqualityArizona2022SineDieReport()
   end
 
@@ -1941,24 +1941,25 @@ function getSession57HouseLegislativeMemberVotingHistory(
     #   default_width
     #   vertical        vertical fonts (Identity-V): how far down a glyph moves; else 0
     #   texts           a cache of code_text
-    #   byte_widths, byte_texts
-    #                   simple fonts: code_width and code_text of codes 0 to 255
+    #   byte_widths     simple fonts: code_width of codes 0 to 255
+    #   byte_texts      simple fonts: code_text of codes 0 to 255, or nothing
+    #                   until it is first needed
     # font_type() is its type, so that the variables that hold a font can be
     # declared with it (otherwise Julia could not tell their type in advance).
     font_type() = NamedTuple{(:bytes_per_code, :codespace, :to_unicode, :encoding, :code_to_cid, :widths,
                               :default_width, :vertical, :texts, :byte_widths, :byte_texts),
                              Tuple{Int,Vector{Tuple{Int,UInt32,UInt32}},Dict{UInt32,String},Vector{String},
                                    Dict{UInt32,UInt32},Dict{UInt32,Float64},Float64,Float64,Dict{UInt32,String},
-                                   Vector{Float64},Vector{String}}}
+                                   Vector{Float64},Vector{Union{Nothing,String}}}}
     function make_font(bytes_per_code::Int, codespace::Vector{Tuple{Int,UInt32,UInt32}}, to_unicode::Dict{UInt32,String},
                        encoding::Vector{String}, code_to_cid::Dict{UInt32,UInt32}, widths::Dict{UInt32,Float64},
                        default_width::Real, vertical::Real)
-        # A simple font's codes are single bytes (and its encoding has all
-        # 256): their widths and texts are looked up now, once.
+        # A simple font's codes are single bytes: their widths are looked up
+        # now, and their texts when first needed, so that neither is looked
+        # up in a Dict for every glyph.
         simple = bytes_per_code == 1
         byte_widths = simple ? [get(widths, UInt32(code), Float64(default_width)) for code in 0:255] : Float64[]
-        byte_texts = simple ? [clean_text(something(get(to_unicode, UInt32(code), nothing), encoding[code+1]))
-                               for code in 0:255] : String[]
+        byte_texts = Vector{Union{Nothing,String}}(nothing, simple ? 256 : 0)
         return font_type()((bytes_per_code, codespace, to_unicode, encoding, code_to_cid, widths, Float64(default_width),
                             Float64(vertical), Dict{UInt32,String}(), byte_widths, byte_texts))
     end
@@ -2175,7 +2176,9 @@ function getSession57HouseLegislativeMemberVotingHistory(
             code, len = next_code(font, s, i)
             i += len
             if font.bytes_per_code == 1
-                w0, text = font.byte_widths[code+1], font.byte_texts[code+1]
+                known = font.byte_texts[code+1]
+                w0 = font.byte_widths[code+1]
+                text = known === nothing ? (font.byte_texts[code+1] = code_text(font, code)) : known
             else
                 w0, text = code_width(font, code), code_text(font, code)
             end
@@ -2215,9 +2218,11 @@ function getSession57HouseLegislativeMemberVotingHistory(
 
     # Reads an array of only strings and numbers, such as the operand of TJ,
     # starting at its "[": its items' kinds (1 for a string, 0 for a number)
-    # go in kinds, numbers in nums, and strings are added to strings, at
-    # ranges. Returns false, with lx and strings as they were, for any other
-    # array, which read_object then reads.
+    # go in kinds, numbers, negated, in nums, and strings are added to
+    # strings, at ranges. Returns false, with lx and strings as they were, for
+    # any other array, which read_object then reads. (An integer is negated
+    # before it becomes a Float64, as TJ did with read_object's Int, so that
+    # -0 is 0.0, not -0.0, which would sort before 0.0.)
     function read_simple_array!(lx, strings::Vector{UInt8}, kinds::Vector{UInt8}, nums::Vector{Float64},
                                 ranges::Vector{UnitRange{Int}})
         d, n = lx.data, length(lx.data)
@@ -2249,7 +2254,7 @@ function getSession57HouseLegislativeMemberVotingHistory(
                 kind == 0 && break
                 lx.pos[] = q
                 push!(kinds, 0x00)
-                push!(nums, kind == 1 ? Float64(integer) : x)
+                push!(nums, kind == 1 ? Float64(-integer) : -x)
                 push!(ranges, 1:0)
             else
                 break
@@ -2496,9 +2501,9 @@ function getSession57HouseLegislativeMemberVotingHistory(
                     else
                         # A number moves the next glyph left (or, in vertical writing,
                         # down) by thousandths of the font size.
-                        x = array_nums[k]
-                        tm = vertical != 0 ? translate_matrix(tm, 0.0, -x / 1000 * size) :
-                                             translate_matrix(tm, -x / 1000 * size * hscale, 0.0)
+                        minus_x = array_nums[k]  # the number, negated
+                        tm = vertical != 0 ? translate_matrix(tm, 0.0, minus_x / 1000 * size) :
+                                             translate_matrix(tm, minus_x / 1000 * size * hscale, 0.0)
                     end
                 end
             elseif op == operators.Tf && n >= 2
@@ -3031,7 +3036,7 @@ try
   tempPath, io= mktemp()
   close(io)
   Downloads.download("https://codeberg.org/AZLegInfo/datasets/raw/branch/main/session57HouseLegislativeMemberVotingHistory.parquet", tempPath)
-  global session57HouseLegislativeMemberVotingHistory = DataFrame(Parquet.read_parquet(tempPath))
+  global session57HouseLegislativeMemberVotingHistory = DataFrame(Parquet2.dataset(tempPath))
 catch e
   println("Error Downloading session57HouseLegislativeMemberVotingHistory: ")
   global session57HouseLegislativeMemberVotingHistory = getSession57HouseLegislativeMemberVotingHistory()

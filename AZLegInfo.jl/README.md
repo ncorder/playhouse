@@ -2,7 +2,7 @@
 
 This folder holds a rewrite of `getSession57HouseLegislativeMemberVotingHistory`
 from [AZLegInfo.jl](https://codeberg.org/AZLegInfo/AZLegInfo.jl), made on top of
-its `main` branch as of commit `ffe2f0b` ("scoping issue"). It
+its `main` branch as of commit `b2638da` ("change from Parquet to Parquet2"). It
 now reads the 57th Legislature's House Member Voting History PDFs using **only
 native Julia code**. All of the new code is inside that one function in
 `src/AZLegInfo.jl`: no `.jl` files were added, and no packages either.
@@ -14,11 +14,14 @@ native Julia code**. All of the new code is inside that one function in
 | Decompression | inside Java and 7z | `inflate_data`, nested in the function |
 | Dependencies | JavaCall, p7zip_jll, Java | none new (Julia's standard library and DataFrames) |
 | Needs `JULIA_COPY_STACKS=1` | yes | no |
-| Time for the 62 PDFs (4,210 pages), first call in a Julia session | about 80 s | about 17 s, mostly compiling |
-| Time for later calls | about 70 s | about 3.3 s, or 1.3 s with 4 threads |
+| Time for the 62 PDFs (4,210 pages), first call in a Julia session | 115 s | 23 s, mostly compiling |
+| Time for later calls | 100 s | 4.2 s, or 1.6 s with 4 threads |
 
-After `using AZLegInfo`, calls are as fast as later calls: precompiling the
-package runs the function once, and Julia keeps the compiled code.
+The times were measured on the same 4-core Linux machine, reading the zip from
+a local file; another machine was about 25% faster for both versions. After
+`using AZLegInfo`, the first call takes about 1 s longer than later calls, not
+about 19 s: precompiling the package runs the function once, and Julia keeps
+the compiled code.
 
 The function's name, argument and return value are unchanged: a `Dict` from each
 member's name to a `DataFrame` of their votes, with the same 13 columns. So
@@ -31,10 +34,11 @@ that uses it work as before.
   the `using` line changed. The function now holds, as nested functions, a
   Deflate decompressor, a zip reader, a PDF text reader and the vote parser,
   in that order.
-- `Project.toml`: removes `JavaCall` and `p7zip_jll`. The `[compat]` section
-  stays empty, as before.
+- `Project.toml`: removes `JavaCall` and `p7zip_jll`, and gives `Parquet2`
+  its own UUID (see the notes at the end). The `[compat]` section stays
+  empty, as before.
 - `0001-Read-Member-Voting-History-PDFs-with-native-Julia-co.patch`: the same
-  change as one commit on top of `ffe2f0b`.
+  change as one commit on top of `b2638da`.
 
 ## Applying it to the Codeberg repository
 
@@ -69,9 +73,8 @@ Most of the speed comes from avoiding work that Julia hides well: the loops
 that run for every byte, token or glyph allocate almost nothing, have no `try`
 block or warning in them, and call other functions only with arguments of
 known types. The content-stream reader keeps numbers and strings in reused
-buffers, and the Deflate decompressor uses lookup tables. It decompresses the
-dataset's 98 MB of PDF streams at about 220 MB/s, about 4 times as fast as the
-Inflate package.
+buffers, and the Deflate decompressor uses lookup tables: it decompresses the
+dataset's 98 MB of PDF streams about 4 times as fast as the Inflate package.
 
 ## How it was checked
 
@@ -87,23 +90,33 @@ Inflate package.
   and warnings as those modules on 529 PDFs: real ones, edge cases, 304
   corrupted ones and the dataset. The only differences are in the wording of
   some warnings about damaged files (for example "Damaged Deflate data"
-  where the Inflate package's error said "BoundsError"). It also gives the
-  same results as the version before the speed work on 50,000 random, and
-  often damaged, content streams, and the modules' 71 unit tests pass.
+  where the Inflate package's error said "BoundsError"). The modules' 71 unit
+  tests pass.
+- **Same as before the speed work.** Random, often damaged, inputs give the
+  same results as the version from before the speed work: 54,000 content
+  streams (with many kinds of fonts, forms, and /Contents arrays; the glyphs
+  are compared bit for bit), 40,000 sets of glyphs to group into lines
+  (with ties, NaN, -0.0 and infinities), and 3,000 voting-history PDFs. An
+  independent review of the speed work found three inputs that behaved
+  differently (a name with a #00 escape, a 0 in a TJ array on mirrored
+  text, and a zip with a duplicate member followed by a damaged PDF); all
+  three are fixed.
 - **The decompressor.** On all 38,274 Flate streams of the test PDFs (140 MB),
   697 streams made with zlib at every level and strategy, 155,000 damaged
-  streams, and hand-made edge cases, it gives the same bytes as the Inflate
-  package, and fails exactly where that package fails. Zip reading reads the
+  streams, 260,000 generated ones (with incomplete and
+  over-subscribed codes, every truncation, and bit flips), and hand-made
+  edge cases, it gives the same bytes as the Inflate package, and fails
+  exactly where that package fails. Zip reading reads the
   108 test zips as before, and on 42,000 mutated ones it never returns wrong
   file contents and gives only clear errors.
 - **Julia versions.** The dataset output is byte-identical, and the unit tests
   pass, on Julia 1.6.7, 1.10.12, 1.11.7, 1.12.7 and 1.13.0, including with
   `--depwarn=error`, and with 1 and 4 threads. Tested on Linux only.
-- **The whole package.** `Pkg.develop` of the package followed by
-  `using AZLegInfo` works (with the `equalityArizona2022SineDieReport` block
-  disabled, see below), and gives 62 members and 67,945 votes, which
-  `findAllBillActions` turns into 13,947 bill actions. After `using`, a call
-  takes about 3.5 s, or 1.6 s with 4 threads.
+- **The whole package.** With `Parquet2.dataset` replaced by
+  `Parquet2.Dataset` (see the notes at the end), `Pkg.develop` of the package
+  followed by `using AZLegInfo` works, with 1 and 4 threads. It gives 62
+  members and 67,945 votes, which `findAllBillActions` turns into 13,947 bill
+  actions, and JavaCall and p7zip_jll are not loaded.
 - **Damaged files.** No damaged or hostile input hung or crashed Julia. That was
   304 corrupted PDFs, hostile PDFs (such as forms that draw themselves and
   10,000-deep nesting) and 42,000 mutated zips. Damaged parts of a PDF are
@@ -129,14 +142,20 @@ Inflate package.
 
 ## Notes on the package's other code
 
-These are outside the rewritten function, and were left as they are:
+Apart from the Parquet2 UUID in `Project.toml`, these are outside the
+rewritten function, and were left as they are:
 
-- The new block that sets `equalityArizona2022SineDieReport` assigns the
-  Parquet data to `session57HouseLegislativeMemberVotingHistory` instead.
-  And reading that Parquet file fails (`UndefRefError`, with Parquet.jl
-  0.8.6 on Julia 1.11), so the package falls back to scraping azleg.gov,
-  which also failed when this was tested. Loading the package then fails.
-  The tests of the whole package were run with that block disabled.
+- `Project.toml` on `main` gives `Parquet2` the UUID of the older Parquet
+  package, so `Pkg.add` and `Pkg.develop` of the package fail ("depends on
+  `Parquet2`, but entry ... has name `Parquet`"). This change fixes that,
+  as it changes `Project.toml` anyway.
+- `using AZLegInfo` still fails, before it gets to the voting histories.
+  Parquet2 (version 0.2.37) has no `Parquet2.dataset`, so reading
+  `equalityArizona2022SineDieReport.parquet` fails with an `UndefVarError`;
+  the package then falls back to scraping azleg.gov, which failed when this
+  was tested (`no method matching lastindex(::Nothing)`). With
+  `Parquet2.Dataset` instead, reading the file works. The block for the
+  voting histories calls `Parquet2.dataset` too.
 - `session57HouseLegislativeMemberVotingHistory.parquet` is not in the
   datasets repository yet, so the package runs the function instead. If it
   is added, the Parquet data would be a `DataFrame`, while
