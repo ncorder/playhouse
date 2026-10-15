@@ -7,9 +7,9 @@ using InteractiveUtils
 # ╔═╡ 388a54f4-e21f-466c-8e85-78e492f99b0b
 begin
 	using Pkg
-	Pkg.add(["MultivariateStats", "DataFrames", "NamedArrays", "UMAP", "PlutoPlotly", "TSne"])
+	Pkg.add(["MultivariateStats", "DataFrames", "NamedArrays", "UMAP", "PlutoPlotly", "TSne", "Clustering", "Distances"])
 	Pkg.add(url="https://codeberg.org/AZLegInfo/AZLegInfo.jl")
-	using AZLegInfo, MultivariateStats, Statistics, NamedArrays, LinearAlgebra, UMAP, PlutoPlotly, TSne
+	using AZLegInfo, MultivariateStats, Statistics, NamedArrays, LinearAlgebra, UMAP, PlutoPlotly, TSne, Clustering, Distances
 end
 
 # ╔═╡ c177a4fe-c38f-11f1-b899-0bbf875c6316
@@ -178,7 +178,93 @@ begin
         )
 #color=averageGrade, colorscale="Viridis",
     tsnePlot
-    
+
+end
+
+# ╔═╡ 56236407-ffa3-4c96-af65-6c2bfbaad6de
+md"""
+## MDS
+"""
+
+# ╔═╡ ef159cb9-18b2-4475-b6cc-e9d9a9616465
+begin
+	model_mds = fit(MDS, X, maxoutdim=2, distances=false)
+	mdsEmbed = predict(model_mds)
+
+	mdsPlot = plot(
+            scatter(
+                x = mdsEmbed[1,:],
+                y = mdsEmbed[2,:],
+                mode = "markers",
+                marker = attr(size=16)
+            )
+        )
+    mdsPlot
+end
+
+# ╔═╡ a147a085-b970-46b8-815e-c42c42f07cca
+md"""
+# Clustering
+"""
+
+# ╔═╡ 952ed242-edb1-44db-bdc1-ab0c26f51255
+begin
+	k = 3
+
+	kmeansClusters = assignments(kmeans(X, k))
+
+	hc = hclust(pairwise(Euclidean(), X, dims=2), linkage=:ward)
+	hclustClusters = cutree(hc, k=k)
+end
+
+# ╔═╡ 31cc81e6-9df0-429d-9b9a-3b270a1ce659
+begin
+	kmeansPlot = plot(
+            scatter(
+                x = transformation[1,:],
+                y = transformation[2,:],
+                mode = "markers",
+                marker = attr(size=16, color=kmeansClusters, colorscale="Viridis")
+            ),
+            Layout(title="K-Means on PCA")
+        )
+    kmeansPlot
+end
+
+# ╔═╡ 44518354-1a2d-452c-94bb-43c36f00aeee
+begin
+	hclustPlot = plot(
+            scatter(
+                x = transformation[1,:],
+                y = transformation[2,:],
+                mode = "markers",
+                marker = attr(size=16, color=hclustClusters, colorscale="Viridis")
+            ),
+            Layout(title="Hierarchical (Ward) on PCA")
+        )
+    hclustPlot
+end
+
+# ╔═╡ 6a154352-b6cb-4b6b-a170-9f7ec394526d
+md"""
+## LDA
+Using the k-means clusters as class labels.
+"""
+
+# ╔═╡ 727f54dc-92bf-4f10-bce1-945f6a9d1289
+begin
+	model_lda = fit(SubspaceLDA, X, kmeansClusters)
+	ldaEmbed = predict(model_lda, X)
+
+	ldaPlot = plot(
+            scatter(
+                x = ldaEmbed[1,:],
+                y = ldaEmbed[2,:],
+                mode = "markers",
+                marker = attr(size=16, color=kmeansClusters, colorscale="Viridis")
+            )
+        )
+    ldaPlot
 end
 
 # ╔═╡ fb6af19b-61ca-4b7b-9a50-440b4bcbdf7e
@@ -205,4 +291,12 @@ end
 # ╠═e6feb5ac-062a-4442-aef0-dcdce3df8c56
 # ╟─c4ad8b78-370b-4eab-b7c8-b7f9184af8c3
 # ╠═f8309839-4d51-4325-8863-626ba7ee5306
+# ╟─56236407-ffa3-4c96-af65-6c2bfbaad6de
+# ╠═ef159cb9-18b2-4475-b6cc-e9d9a9616465
+# ╟─a147a085-b970-46b8-815e-c42c42f07cca
+# ╠═952ed242-edb1-44db-bdc1-ab0c26f51255
+# ╠═31cc81e6-9df0-429d-9b9a-3b270a1ce659
+# ╠═44518354-1a2d-452c-94bb-43c36f00aeee
+# ╟─6a154352-b6cb-4b6b-a170-9f7ec394526d
+# ╠═727f54dc-92bf-4f10-bce1-945f6a9d1289
 # ╟─fb6af19b-61ca-4b7b-9a50-440b4bcbdf7e
