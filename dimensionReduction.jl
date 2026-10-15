@@ -225,14 +225,14 @@ begin
                 marker = attr(size=16, color=partyColor)
             )
         )
-    umapPlot
 
-    
 # 2. Save it to an HTML file
 open("./my_plot.html", "w") do io
     # If using PlutoPlotly, extract the underlying Plot object with p.Plot
-    PlotlyBase.to_html(io, umapPlot.Plot) 
+    PlotlyBase.to_html(io, umapPlot.Plot)
 end
+
+    umapPlot
 end
 
 # ╔═╡ c4ad8b78-370b-4eab-b7c8-b7f9184af8c3
