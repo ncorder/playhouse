@@ -248,21 +248,87 @@ end
 # ╔═╡ 6a154352-b6cb-4b6b-a170-9f7ec394526d
 md"""
 ## LDA
-Using the k-means clusters as class labels.
+Using party as class labels.
 """
+
+# ╔═╡ e257d5e4-3afa-4912-8b28-e78f33e4ff38
+# Party from https://www.azleg.gov/MemberRoster/?body=H
+party = Dict(
+	"ABEYTIA" => "D",
+	"AGUILAR" => "D",
+	"ALLEN" => "R",
+	"AUSTIN" => "D",
+	"BIASIUCCI" => "R",
+	"BLACKMAN" => "R",
+	"BLATTMAN" => "D",
+	"BLISS" => "R",
+	"CARBONE" => "R",
+	"CARTER N" => "R",
+	"CARTER P" => "R",
+	"CAVERO" => "D",
+	"CHAPLIK" => "R",
+	"CONNOLLY" => "D",
+	"CONTRERAS L" => "D",
+	"CONTRERAS P" => "D",
+	"CREWS" => "D",
+	"DE LOS SANTOS" => "D",
+	"DIAZ" => "R",
+	"FINK" => "R",
+	"GARCIA" => "D",
+	"GILLETTE" => "R",
+	"GRESS" => "R",
+	"GRIFFIN" => "R",
+	"GUTIERREZ" => "D",
+	"HEAP" => "R",
+	"HENDRIX" => "R",
+	"HERNANDEZ A" => "D",
+	"HERNANDEZ C" => "D",
+	"HERNANDEZ L" => "D",
+	"KESHEL" => "R",
+	"KOLODIN" => "R",
+	"KUPPER" => "R",
+	"LIGUORI" => "D",
+	"LIVINGSTON" => "R",
+	"LOPEZ" => "R",
+	"LUNA-NÁJERA" => "D",
+	"MÁRQUEZ" => "D",
+	"MARSHALL" => "R",
+	"MARTINEZ" => "R",
+	"MATHIS" => "D",
+	"NGUYEN" => "R",
+	"OLSON" => "R",
+	"PEÑA" => "R",
+	"PESHLAKAI" => "D",
+	"PINGERELLI" => "R",
+	"POWELL" => "R",
+	"REIM" => "R",
+	"RIVERO" => "R",
+	"SANDOVAL" => "D",
+	"SIMACEK" => "D",
+	"MONTENEGRO" => "R",
+	"STAHL HAMILTON" => "D",
+	"TAYLOR" => "R",
+	"TRAVERS" => "D",
+	"TSOSIE" => "D",
+	"VILLEGAS" => "D",
+	"VOLK" => "D",
+	"WAY" => "R",
+	"WENINGER" => "R",
+	"WILLOUGHBY" => "R",
+	"WILMETH" => "R"
+)
+
+# ╔═╡ 8c2d86b1-cb6e-441a-9c36-73ba4559591e
+memberParty = [party[member] for member in names(oneHotEncodedMVH_Meanized, 2)]
 
 # ╔═╡ 727f54dc-92bf-4f10-bce1-945f6a9d1289
 begin
-	model_lda = fit(SubspaceLDA, X, kmeansClusters)
+	model_lda = fit(SubspaceLDA, X, [p == "R" ? 1 : 2 for p in memberParty])
 	ldaEmbed = predict(model_lda, X)
 
 	ldaPlot = plot(
-            scatter(
-                x = ldaEmbed[1,:],
-                y = ldaEmbed[2,:],
-                mode = "markers",
-                marker = attr(size=16, color=kmeansClusters, colorscale="Viridis")
-            )
+            [histogram(x = ldaEmbed[1, memberParty .== p], name = p) for p in ["R", "D"]],
+            Layout(barmode="overlay")
         )
     ldaPlot
 end
@@ -298,5 +364,7 @@ end
 # ╠═31cc81e6-9df0-429d-9b9a-3b270a1ce659
 # ╠═44518354-1a2d-452c-94bb-43c36f00aeee
 # ╟─6a154352-b6cb-4b6b-a170-9f7ec394526d
+# ╠═e257d5e4-3afa-4912-8b28-e78f33e4ff38
+# ╠═8c2d86b1-cb6e-441a-9c36-73ba4559591e
 # ╠═727f54dc-92bf-4f10-bce1-945f6a9d1289
 # ╟─fb6af19b-61ca-4b7b-9a50-440b4bcbdf7e
