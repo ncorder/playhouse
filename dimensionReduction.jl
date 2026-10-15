@@ -7,8 +7,8 @@ using InteractiveUtils
 # ╔═╡ 388a54f4-e21f-466c-8e85-78e492f99b0b
 begin
 	using Pkg
-	Pkg.add(["MultivariateStats", "DataFrames", "NamedArrays", "UMAP", "PlutoPlotly", "TSne", "Clustering", "Distances"])
 	Pkg.add(url="https://codeberg.org/AZLegInfo/AZLegInfo.jl")
+	Pkg.add(["MultivariateStats", "DataFrames", "NamedArrays", "UMAP", "PlutoPlotly", "TSne", "Clustering", "Distances"])
 	using AZLegInfo, MultivariateStats, Statistics, NamedArrays, LinearAlgebra, UMAP, PlutoPlotly, TSne, Clustering, Distances
 end
 
@@ -96,159 +96,9 @@ end
 # ╔═╡ a89dd7b5-7ffb-46bb-b63e-6bd29a52a15a
 oneHotEncodedMVH_Meanized = replaceMissingWithMean(removeRareItems(oneHotEncodedMVH))
 
-# ╔═╡ 2e4ceee2-52ec-4633-a1dd-2a75ed23f72a
+# ╔═╡ 61eb9919-23c4-49c7-aa2d-1f3ecefcd35d
 md"""
-# PCA Anaysis
-"""
-
-# ╔═╡ 3f55631c-61a1-43ff-aaeb-d5862344d6d6
-begin
-	X = Matrix{Float64}(oneHotEncodedMVH_Meanized)
-
-	model = fit(PCA, X, maxoutdim=2)
-	transformation = transform(model, X)
-end
-
-# ╔═╡ 70a1a572-4a64-4567-b67c-1ad62b75ef53
-begin	
-    P = plot(
-            scatter(
-                x = transformation[1,:],
-                y = transformation[2,:],
-                mode = "markers",
-                #text = string.(names(studentScores)[2]),
-                hovertemplate = "Student No: %{text}<extra></extra>",
-                marker = attr(size=16,  showscale=true)
-            )
-        )
-#color=averageGrade, colorscale="Viridis",
-    P
-    
-end
-
-# ╔═╡ 4ee91e6b-1af7-40c9-9d50-6df3142a93bc
-md"""
-## UMAP
-"""
-
-# ╔═╡ e6feb5ac-062a-4442-aef0-dcdce3df8c56
-begin
-	model_umap = UMAP.fit(X,2)
-	embed = model_umap.embedding
-
-	umapPlot = plot(
-            scatter(
-                x = embed[1,:],
-                y = embed[2,:],
-                mode = "markers",
-                #text = string.(names(studentScores)[2]),
-                hovertemplate = "Student No: %{text}<extra></extra>",
-                marker = attr(size=16,  showscale=true)
-            )
-        )
-#color=averageGrade, colorscale="Viridis",
-    umapPlot
-
-    
-# 2. Save it to an HTML file
-open("./my_plot.html", "w") do io
-    # If using PlutoPlotly, extract the underlying Plot object with p.Plot
-    PlotlyBase.to_html(io, umapPlot.Plot) 
-end
-end
-
-# ╔═╡ c4ad8b78-370b-4eab-b7c8-b7f9184af8c3
-md"""
-## TSNE
-"""
-
-# ╔═╡ f8309839-4d51-4325-8863-626ba7ee5306
-begin
-	tsneModel = tsne(X',2,0,1000)
-
-	tsnePlot = plot(
-            scatter(
-                x = tsneModel[1,:],
-                y = tsneModel[2,:],
-                mode = "markers",
-                #text = string.(names(studentScores)[2]),
-                hovertemplate = "Student No: %{text}<extra></extra>",
-                marker = attr(size=16,  showscale=true)
-            )
-        )
-#color=averageGrade, colorscale="Viridis",
-    tsnePlot
-
-end
-
-# ╔═╡ 56236407-ffa3-4c96-af65-6c2bfbaad6de
-md"""
-## MDS
-"""
-
-# ╔═╡ ef159cb9-18b2-4475-b6cc-e9d9a9616465
-begin
-	model_mds = fit(MDS, X, maxoutdim=2, distances=false)
-	mdsEmbed = predict(model_mds)
-
-	mdsPlot = plot(
-            scatter(
-                x = mdsEmbed[1,:],
-                y = mdsEmbed[2,:],
-                mode = "markers",
-                marker = attr(size=16)
-            )
-        )
-    mdsPlot
-end
-
-# ╔═╡ a147a085-b970-46b8-815e-c42c42f07cca
-md"""
-# Clustering
-"""
-
-# ╔═╡ 952ed242-edb1-44db-bdc1-ab0c26f51255
-begin
-	k = 3
-
-	kmeansClusters = assignments(kmeans(X, k))
-
-	hc = hclust(pairwise(Euclidean(), X, dims=2), linkage=:ward)
-	hclustClusters = cutree(hc, k=k)
-end
-
-# ╔═╡ 31cc81e6-9df0-429d-9b9a-3b270a1ce659
-begin
-	kmeansPlot = plot(
-            scatter(
-                x = transformation[1,:],
-                y = transformation[2,:],
-                mode = "markers",
-                marker = attr(size=16, color=kmeansClusters, colorscale="Viridis")
-            ),
-            Layout(title="K-Means on PCA")
-        )
-    kmeansPlot
-end
-
-# ╔═╡ 44518354-1a2d-452c-94bb-43c36f00aeee
-begin
-	hclustPlot = plot(
-            scatter(
-                x = transformation[1,:],
-                y = transformation[2,:],
-                mode = "markers",
-                marker = attr(size=16, color=hclustClusters, colorscale="Viridis")
-            ),
-            Layout(title="Hierarchical (Ward) on PCA")
-        )
-    hclustPlot
-end
-
-# ╔═╡ 6a154352-b6cb-4b6b-a170-9f7ec394526d
-md"""
-## LDA
-Using party as class labels.
+## Party Affiliation
 """
 
 # ╔═╡ e257d5e4-3afa-4912-8b28-e78f33e4ff38
@@ -319,7 +169,170 @@ party = Dict(
 )
 
 # ╔═╡ 8c2d86b1-cb6e-441a-9c36-73ba4559591e
-memberParty = [party[member] for member in names(oneHotEncodedMVH_Meanized, 2)]
+begin
+	members = names(oneHotEncodedMVH_Meanized, 2)
+	memberParty = [party[member] for member in members]
+	memberLabels = members .* " (" .* memberParty .* ")"
+	partyColor = [p == "R" ? "red" : "blue" for p in memberParty]
+end
+
+# ╔═╡ 2e4ceee2-52ec-4633-a1dd-2a75ed23f72a
+md"""
+# PCA Anaysis
+"""
+
+# ╔═╡ 3f55631c-61a1-43ff-aaeb-d5862344d6d6
+begin
+	X = Matrix{Float64}(oneHotEncodedMVH_Meanized)
+
+	model = fit(PCA, X, maxoutdim=2)
+	transformation = transform(model, X)
+end
+
+# ╔═╡ 70a1a572-4a64-4567-b67c-1ad62b75ef53
+begin	
+    P = plot(
+            scatter(
+                x = transformation[1,:],
+                y = transformation[2,:],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=partyColor)
+            )
+        )
+    P
+    
+end
+
+# ╔═╡ 4ee91e6b-1af7-40c9-9d50-6df3142a93bc
+md"""
+## UMAP
+"""
+
+# ╔═╡ e6feb5ac-062a-4442-aef0-dcdce3df8c56
+begin
+	model_umap = UMAP.fit(X,2)
+	embed = model_umap.embedding
+
+	umapPlot = plot(
+            scatter(
+                x = embed[1,:],
+                y = embed[2,:],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=partyColor)
+            )
+        )
+    umapPlot
+
+    
+# 2. Save it to an HTML file
+open("./my_plot.html", "w") do io
+    # If using PlutoPlotly, extract the underlying Plot object with p.Plot
+    PlotlyBase.to_html(io, umapPlot.Plot) 
+end
+end
+
+# ╔═╡ c4ad8b78-370b-4eab-b7c8-b7f9184af8c3
+md"""
+## TSNE
+"""
+
+# ╔═╡ f8309839-4d51-4325-8863-626ba7ee5306
+begin
+	tsneModel = tsne(X',2,0,1000)
+
+	tsnePlot = plot(
+            scatter(
+                x = tsneModel[:,1],
+                y = tsneModel[:,2],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=partyColor)
+            )
+        )
+    tsnePlot
+
+end
+
+# ╔═╡ 56236407-ffa3-4c96-af65-6c2bfbaad6de
+md"""
+## MDS
+"""
+
+# ╔═╡ ef159cb9-18b2-4475-b6cc-e9d9a9616465
+begin
+	model_mds = fit(MDS, X, maxoutdim=2, distances=false)
+	mdsEmbed = predict(model_mds)
+
+	mdsPlot = plot(
+            scatter(
+                x = mdsEmbed[1,:],
+                y = mdsEmbed[2,:],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=partyColor)
+            )
+        )
+    mdsPlot
+end
+
+# ╔═╡ a147a085-b970-46b8-815e-c42c42f07cca
+md"""
+# Clustering
+"""
+
+# ╔═╡ 952ed242-edb1-44db-bdc1-ab0c26f51255
+begin
+	k = 3
+
+	kmeansClusters = assignments(kmeans(X, k))
+
+	hc = hclust(pairwise(Euclidean(), X, dims=2), linkage=:ward)
+	hclustClusters = cutree(hc, k=k)
+end
+
+# ╔═╡ 31cc81e6-9df0-429d-9b9a-3b270a1ce659
+begin
+	kmeansPlot = plot(
+            scatter(
+                x = transformation[1,:],
+                y = transformation[2,:],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=kmeansClusters, colorscale="Viridis", line=attr(width=3, color=partyColor))
+            ),
+            Layout(title="K-Means on PCA")
+        )
+    kmeansPlot
+end
+
+# ╔═╡ 44518354-1a2d-452c-94bb-43c36f00aeee
+begin
+	hclustPlot = plot(
+            scatter(
+                x = transformation[1,:],
+                y = transformation[2,:],
+                mode = "markers",
+                text = memberLabels,
+                hovertemplate = "%{text}<extra></extra>",
+                marker = attr(size=16, color=hclustClusters, colorscale="Viridis", line=attr(width=3, color=partyColor))
+            ),
+            Layout(title="Hierarchical (Ward) on PCA")
+        )
+    hclustPlot
+end
+
+# ╔═╡ 6a154352-b6cb-4b6b-a170-9f7ec394526d
+md"""
+## LDA
+Using party as class labels.
+"""
 
 # ╔═╡ 727f54dc-92bf-4f10-bce1-945f6a9d1289
 begin
@@ -327,7 +340,7 @@ begin
 	ldaEmbed = predict(model_lda, X)
 
 	ldaPlot = plot(
-            [histogram(x = ldaEmbed[1, memberParty .== p], name = p) for p in ["R", "D"]],
+            [histogram(x = ldaEmbed[1, memberParty .== p], name = p, marker = attr(color = p == "R" ? "red" : "blue")) for p in ["R", "D"]],
             Layout(barmode="overlay")
         )
     ldaPlot
@@ -350,6 +363,9 @@ end
 # ╟─4c1a3eeb-8e7b-45b5-820a-f25c7b8c302b
 # ╠═b5bd976a-1278-49ac-907a-ea23e8a51ff6
 # ╠═a89dd7b5-7ffb-46bb-b63e-6bd29a52a15a
+# ╟─61eb9919-23c4-49c7-aa2d-1f3ecefcd35d
+# ╠═e257d5e4-3afa-4912-8b28-e78f33e4ff38
+# ╠═8c2d86b1-cb6e-441a-9c36-73ba4559591e
 # ╟─2e4ceee2-52ec-4633-a1dd-2a75ed23f72a
 # ╠═3f55631c-61a1-43ff-aaeb-d5862344d6d6
 # ╠═70a1a572-4a64-4567-b67c-1ad62b75ef53
@@ -364,7 +380,5 @@ end
 # ╠═31cc81e6-9df0-429d-9b9a-3b270a1ce659
 # ╠═44518354-1a2d-452c-94bb-43c36f00aeee
 # ╟─6a154352-b6cb-4b6b-a170-9f7ec394526d
-# ╠═e257d5e4-3afa-4912-8b28-e78f33e4ff38
-# ╠═8c2d86b1-cb6e-441a-9c36-73ba4559591e
 # ╠═727f54dc-92bf-4f10-bce1-945f6a9d1289
 # ╟─fb6af19b-61ca-4b7b-9a50-440b4bcbdf7e
