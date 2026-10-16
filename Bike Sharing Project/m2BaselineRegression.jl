@@ -23,8 +23,8 @@ end
 # ╔═╡ c44336d3-0c16-5409-98fb-d90af0d9fdb8
 begin
 	using CSV, DataFrames, Dates, Downloads, Printf, ZipFile
-	using GLM, StatsModels, StatsBase, Distributions, HypothesisTests
-	using LinearAlgebra, Random, Statistics
+	using GLM, StatsModels, StatsBase, Distributions
+	using LinearAlgebra, Statistics
 	using Loess, PlotlyKaleido, PlutoPlotly, PlutoUI
 end
 
@@ -36,10 +36,10 @@ md"""
 This notebook completes **Milestone 2 (Baseline Linear Regression)** of the midterm project for the *bike sharing* dataset:
 
 * fit a multiple linear model for a continuous outcome, the total number of bike rentals per day (`cnt`);
-* check the assumptions: linearity, constant variance, normality of the residuals, and leverage/influence (plus independence, because the observations are consecutive days);
+* check the assumptions: linearity, constant variance (homoscedasticity), normality of the residuals, and leverage/influence;
 * interpret the key coefficients with partial-effect plots.
 
-The analysis follows the template of the **Exam 1 review**: state the model and the distribution of the errors, build confidence intervals and hypothesis tests step by step, compare nested models with an ``F``-test, diagnose multicollinearity from the summary block and the VIFs, select terms with backward AIC/BIC, and read the residual plots. Each section names the review problem it mirrors.
+The analysis follows the template of the **Exam 1 review** and uses only the tools from that material: state the model and the distribution of the errors, build confidence intervals and hypothesis tests step by step, compare nested models with an ``F``-test, diagnose multicollinearity from the summary block and the VIFs, select terms with backward AIC/BIC, and read the residual plots (the four plots R draws for `plot(lm)`). Each section names the review problem it mirrors.
 
 **Project question** (answered fully in M3): *after adjusting for weather, is the holiday effect meaningful, and does it depend on temperature?* The model built here is the baseline that the M3 ANCOVA will extend.
 """
@@ -51,7 +51,7 @@ TableOfContents(title = "M2 · Bike sharing", depth = 3)
 md"""
 ## 1 · Data
 
-The data are the daily file (`day.csv`) of the UCI *Bike Sharing* dataset (Fanaee-T & Gama, 2013): 731 days of Capital Bikeshare rentals in Washington, D.C., from 1 January 2011 to 31 December 2012, joined with weather and calendar information. A copy is stored in `data/day.csv` next to this notebook; if it is missing, the notebook downloads the archive from the UCI repository.
+The data are the daily file (`day.csv`) of the UCI *Bike Sharing* dataset (Fanaee-T & Gama, 2013): 731 days of Capital Bikeshare rentals in Washington, D.C., from 1 January 2011 to 31 December 2012, joined with weather and calendar information. A copy is stored in `data/day.csv` next to this notebook (with the hourly file `data/hour.csv`, used once in Section 8.3); if a file is missing, the notebook downloads the archive from the UCI repository.
 """
 
 # ╔═╡ 562689cd-12a1-5c6b-b8ac-b25f7b688993
@@ -61,8 +61,9 @@ data_path = joinpath(@__DIR__, "data", "day.csv")
 """
     load_bike_data(path)
 
-Read the daily UCI *Bike Sharing* file. When `path` does not exist, download the
-archive from the UCI Machine Learning Repository and extract `day.csv` to `path`.
+Read a UCI *Bike Sharing* file (`day.csv` or `hour.csv`). When `path` does not exist,
+download the archive from the UCI Machine Learning Repository and extract the file of
+the same name to `path`.
 """
 function load_bike_data(path)
 	if !isfile(path)
@@ -70,7 +71,7 @@ function load_bike_data(path)
 		archive = Downloads.download("https://archive.ics.uci.edu/static/public/275/bike+sharing+dataset.zip")
 		reader = ZipFile.Reader(archive)
 		try
-			entry = only(filter(f -> basename(f.name) == "day.csv", reader.files))
+			entry = only(filter(f -> basename(f.name) == basename(path), reader.files))
 			write(path, read(entry))
 		finally
 			close(reader)
@@ -213,14 +214,14 @@ m_base = lm(f_base, dm; contrasts = coding);
 
 # ╔═╡ 4705ac92-e1b9-521c-9ed9-6a53395c62f1
 md"""
-## 4 · Is temperature linear? C+R plots and a nested ``F``-test *(Problem 3)*
+## 4 · Is temperature linear? Residual plots and a nested ``F``-test *(Problem 3)*
 
-A **component-plus-residual (partial-residual) plot** shows, for one predictor ``x_j``, the residuals plus the fitted contribution of ``x_j``, that is ``e_i + \hat\beta_j (x_{ij} - \bar x_j)``, against ``x_j``. If the relationship is linear, the LOESS smoother (orange) follows the dashed straight line.
+A basic linearity check is to plot the residuals of the model against each predictor. If a predictor enters the model correctly, the residuals scatter evenly around zero with no pattern. A curved band means that a straight-line term is missing curvature. The orange line is a smoother (lowess) like the one R draws in `plot(lm)`.
 """
 
 # ╔═╡ ca6eba9e-a96e-5c2e-a738-122b427347a9
 md"""
-The temperature panel is clearly curved: rentals climb steeply between about 5 °C and 20 °C, level off in the mid-20s and fall on the hottest days, so a straight line under-predicts mild days and over-predicts cold and hot ones. Humidity and wind look roughly linear (Section 8.1 revisits them). We therefore add polynomial terms in the centered temperature ``T = `` temperature − 20 °C (centering reduces the correlation between ``T``, ``T^2`` and ``T^3``) and compare the nested models with ``F``-tests, as R's `anova()` does:
+The temperature panel shows a clear arch: the residuals are mostly negative on cool days (about 2–10 °C), mostly positive between about 12 °C and 25 °C, and strongly negative on the hottest days. A straight line in temperature therefore over-predicts cool and hot days and under-predicts mild ones. Humidity and wind show little pattern (Section 8.1 looks at them again). We therefore add polynomial terms in the centered temperature ``T = `` temperature − 20 °C. Centering reduces the correlation between ``T``, ``T^2`` and ``T^3`` and so keeps their VIFs down. We then compare the nested models with ``F``-tests, as R's `anova()` does:
 """
 
 # ╔═╡ e86a54ec-d2ce-5e2d-ae80-1d7274097986
@@ -251,7 +252,7 @@ m_full = lm(f_full, dm; contrasts = coding);
 md"""
 ## 6 · Backward selection by AIC and BIC *(Problem 5)*
 
-Starting from the full model, backward elimination drops, one at a time, the term whose removal lowers the criterion the most, and stops when no removal helps. As in R's `step()`, the criterion is ``n \log(\text{RSS}/n) + k\,p`` with ``k = 2`` for AIC and ``k = \log n`` for BIC (this differs from the log-likelihood AIC by a constant). Each factor and the temperature polynomial are treated as one term.
+Starting from the full model, backward elimination drops, one at a time, the term whose removal lowers the criterion the most, and stops when no removal helps. As in R's `step()`, the criterion is ``n \log(\text{RSS}/n) + k\,p`` with ``k = 2`` for AIC and ``k = \log n`` for BIC. Each factor and the temperature polynomial are treated as one term.
 """
 
 # ╔═╡ 17805076-f655-54ad-8acb-b4a2c2434eb6
@@ -289,49 +290,54 @@ md"""
 md"""
 ## 8 · Checking the assumptions *(Problem 6 and M2)*
 
-The inference above assumes (1) a linear mean function, (2) constant error variance, (3) normally distributed errors and (4) independent errors, and it can be distorted by (5) high-leverage or influential days. Each is checked below with plots and a formal test. Hover over any point to see its date.
+The inference above assumes a linear mean function and errors that are independent, normally distributed and of constant variance. It can also be distorted by high-leverage or influential days. The checks below use the residual plots that R draws for `plot(lm)`: residuals vs fitted, normal Q–Q, scale–location and residuals vs leverage. Hover over any point to see its date.
+
+The **standardized residual** of day ``i`` is ``r_i = e_i / (\hat\sigma\sqrt{1 - h_{ii}})``, where ``h_{ii}`` is its leverage (defined in 8.4). Under the model, the ``r_i`` behave roughly like draws from ``N(0, 1)``.
 """
 
 # ╔═╡ 53d425c4-ec93-5190-9cdf-0a6d3b649bba
 md"""
 ### 8.1 Linearity
 
-With the cubic term, the LOESS curve in the temperature C+R plot follows the fitted component closely. Humidity and wind are close to linear over most of their range, with some extra curvature at the extremes: humidity matters little below about 50 %, and wind matters more above about 20 km/h.
+With the cubic term, the residuals plotted against temperature no longer arch (compare Section 4). Humidity and wind are close to linear over most of their range, with some extra curvature at the extremes: humidity matters little below about 50 %, and wind matters more above about 20 km/h.
 """
 
+# ╔═╡ 3584448f-db33-501d-9d2e-aded839ec383
+# Hours with light rain/snow or heavier (weathersit ≥ 3) on each date, from the hourly file
+rain_hours = let hr = load_bike_data(joinpath(@__DIR__, "data", "hour.csv"))
+	Dict(r.dteday => r.n for r in eachrow(combine(groupby(hr, :dteday), :weathersit => (w -> count(>=(3), w)) => :n)))
+end;
+
 # ╔═╡ 96ed9737-95b4-5f80-8f24-7ca235f6338f
-nw_lags = floor(Int, 4 * (nrow(dm) / 100)^(2 / 9))
+md"""
+### 8.5 Independence: a quick look
 
-# ╔═╡ d8ff42f8-1f3e-5c15-85f4-0b5f735b6d3c
-Markdown.parse("""
-### 8.7 Sensitivity checks
+The model assumes independent errors, but the days are consecutive, so a simple check is to plot the residuals in time order:
+"""
 
-**Robust standard errors.** HC3 standard errors allow the variance to differ from day to day, and Newey–West (HAC) standard errors also allow autocorrelation (Bartlett kernel, $(nw_lags) lags, ``\\lfloor 4 (n/100)^{2/9} \\rfloor``). The ``p``-values below use the Newey–West standard errors:
-""")
-
-# ╔═╡ e1171cbd-b81e-5422-aabf-c15c41a9c285
+# ╔═╡ 02b8eb52-3091-56c9-baed-0163c38821f4
 md"""
 ## 9 · Interpreting the key coefficients *(M2)*
 
-A **partial-effect plot** shows how the predicted number of rentals changes with one predictor while all the other predictors are held fixed. Following the "effect display" convention (Fox & Weisberg), the other predictors are held at their sample averages, with each factor at its observed mix of levels, so the height of each curve corresponds to an average day of the two years. Bands and bars are 95 % confidence intervals for the mean response. Curves span the central 98 % of the observed values; tick marks along the bottom show the observed days. All panels share one vertical scale, so effect sizes can be compared directly.
+A **partial-effect plot** shows how the predicted number of rentals changes with one predictor while all the other predictors are held fixed: numeric predictors at their sample means and each factor at its observed mix of levels. The height of each curve therefore corresponds to an average day of the two years. Each point on a curve is a predicted mean response ``x_0^\top \hat\beta``, and the bands and bars are its 95 % confidence interval, ``x_0^\top\hat\beta \pm t_{0.975}\,\hat\sigma\sqrt{x_0^\top (X^\top X)^{-1} x_0}``, exactly as in Problem 2(c). Curves span the central 98 % of the observed values; tick marks along the bottom show the observed days. All panels share one vertical scale, so effect sizes can be compared directly.
 """
 
-# ╔═╡ 9cf637e5-ca1b-57f7-b78c-b581b4aeaf86
+# ╔═╡ 105a4a50-0a63-5c4c-8871-80b10ffb25bf
 md"""
 ## Appendix A · Figures for the M2 paper
 
 The figures in the M2 paper are generated here. Tick the box to write them as PNG files into `figures/` next to this notebook (PlotlyKaleido renders the Plotly figures).
 """
 
-# ╔═╡ 22aefb06-4242-5a19-ae35-144580fe963c
+# ╔═╡ 1a807fce-4535-511c-a246-06e0f8c5740a
 @bind export_figures CheckBox(default = false)
 
-# ╔═╡ 15abc70e-9d9b-5acf-b8f7-f19fbfbb309e
+# ╔═╡ c1047b10-9bed-5545-99fe-7a42e22f6c78
 md"""
 ## Appendix B · Statistical helper functions
 """
 
-# ╔═╡ 858996ad-09da-542f-9e41-d0a85dbf141b
+# ╔═╡ b87d49db-2bb0-5cf1-b17f-b042daa26ea3
 """
     fmt(x, d = 0)
 
@@ -363,26 +369,26 @@ Markdown.parse("""
 Every weather and calendar term except *weekend* is significant at the 5 % level, and ``R^2`` rises from $(fmt(r2(m_slr), 3)) to $(fmt(r2(m_base), 3)). Before interpreting individual coefficients, the next section checks whether a straight line in temperature is adequate.
 """)
 
-# ╔═╡ d42ac367-1f08-5df6-9406-45024724852b
+# ╔═╡ 15abc70e-9d9b-5acf-b8f7-f19fbfbb309e
 "Format a p-value as `< 0.001` or `= 0.123`."
 fmt_p(p) = p < 0.001 ? "< 0.001" : "= " * fmt(p, 3)
 
-# ╔═╡ 38160394-806f-5fea-87ce-3ce423b72906
+# ╔═╡ 858996ad-09da-542f-9e41-d0a85dbf141b
 "p-value for a table cell."
 pstr(p) = p < 0.001 ? "< 0.001" : fmt(p, 3)
 
-# ╔═╡ 5195d130-051e-5595-9b61-aab379b3ec3d
+# ╔═╡ d42ac367-1f08-5df6-9406-45024724852b
 "Format a coefficient with decimals that suit its size."
 fmt_coef(x) = fmt(x, abs(x) < 1 ? 3 : abs(x) < 100 ? 2 : 1)
 
-# ╔═╡ 3667542c-4d87-5918-911b-06e44bd847bf
+# ╔═╡ 38160394-806f-5fea-87ce-3ce423b72906
 # R-style p-value and significance stars, used by the summary/anova printouts
 begin
 	rpval(p) = p < 2e-16 ? "<2e-16" : p < 1e-3 ? @sprintf("%.2e", p) : @sprintf("%.4f", p)
 	stars(p) = p < 0.001 ? "***" : p < 0.01 ? "**" : p < 0.05 ? "*" : p < 0.1 ? "." : ""
 end
 
-# ╔═╡ 818dfb44-fce8-5db8-b1b5-a6f83edb6adc
+# ╔═╡ 5195d130-051e-5595-9b61-aab379b3ec3d
 """
     mdtable(df; align)
 
@@ -431,7 +437,18 @@ let
 	mdtable(rows; align = "llrr")
 end
 
-# ╔═╡ 91e1aa7a-14c1-5374-8241-6b04338244af
+# ╔═╡ 0fc8bbc0-a2f8-5a5e-a677-0e23b60ff107
+let
+	rows = map(temp_formulas) do (name, f)
+		m = lm(f, dm; contrasts = coding)
+		(name, length(coef(m)), fmt(r2(m), 4), fmt(adjr2(m), 4), fmt(sqrt(deviance(m) / dof_residual(m)), 1),
+		 fmt(aic(m), 1), fmt(bic(m), 1))
+	end
+	mdtable(DataFrame([n => getindex.(rows, i) for (i, n) in enumerate(
+		["Temperature term", "Parameters", "R²", "Adj. R²", "σ̂", "AIC", "BIC"])]))
+end
+
+# ╔═╡ 3667542c-4d87-5918-911b-06e44bd847bf
 pretty_term = Dict(
 	"(Intercept)"              => "(Intercept)",
 	"year: 2012"               => "Year 2012 (vs 2011)",
@@ -450,7 +467,7 @@ pretty_term = Dict(
 	"wind_kmh"                 => "Wind speed (km/h)",
 )
 
-# ╔═╡ 857c3f8d-abc6-57d3-8078-0dd96feb194b
+# ╔═╡ 818dfb44-fce8-5db8-b1b5-a6f83edb6adc
 """
     r_summary(m; call)
 
@@ -493,7 +510,7 @@ r_summary(m_base; call = "cnt ~ year + season + daytype + weather + temp_c + hum
 # ╔═╡ c680c62f-b073-5bb9-b152-e084fa180d01
 r_summary(m_full; call = "cnt ~ year + season + month + daytype + weather + tc + tc^2 + tc^3 + atemp_c + hum_pct + wind_kmh")
 
-# ╔═╡ 683c0cec-1766-52d0-8c92-f66902c5fc10
+# ╔═╡ 91e1aa7a-14c1-5374-8241-6b04338244af
 """
     anova_text(models; labels)
 
@@ -530,7 +547,7 @@ anova_text([m_base, m_quad, m_cubic, m_quart];
 	          "cnt ~ year + season + daytype + weather + tc + tc^2 + tc^3 + hum_pct + wind_kmh",
 	          "cnt ~ year + season + daytype + weather + tc + tc^2 + tc^3 + tc^4 + hum_pct + wind_kmh"])
 
-# ╔═╡ 0143083b-8b8d-524d-9ca4-250b5c3fb636
+# ╔═╡ 857c3f8d-abc6-57d3-8078-0dd96feb194b
 "F-test of a reduced model against a larger model that contains it."
 function nested_ftest(reduced, full)
 	rss_r, rss_f = deviance(reduced), deviance(full)
@@ -553,77 +570,47 @@ Markdown.parse("""
 * ``F = \\dfrac{(\\text{RSS}_{\\text{reduced}} - \\text{RSS}_{\\text{full}})/2}{\\text{RSS}_{\\text{full}}/(n - p)}`` = ($(fmt(ftest_curv.rss_r, 0)) − $(fmt(ftest_curv.rss_f, 0))) / 2 ÷ ($(fmt(ftest_curv.rss_f, 0)) / $(ftest_curv.df2)) = $(fmt(ftest_curv.F, 1)) on 2 and $(ftest_curv.df2) df, ``p`` $(fmt_p(ftest_curv.p)).
 * Because ``p < 0.05`` we reject ``H_0``: holding the other predictors constant, the effect of temperature is curved.
 
-The quadratic and cubic terms are each highly significant, while a quartic term adds nothing (``p`` = $(fmt(ftest_quart.p, 2))). The cubic is the lowest-degree polynomial that captures the shape, and it also has the lowest AIC, BIC and 10-fold cross-validated prediction error of the four:
+The quadratic and cubic terms are each highly significant, while a quartic term adds nothing (``p`` = $(fmt(ftest_quart.p, 2))). The cubic is the lowest-degree polynomial that captures the shape, and it also has the lowest AIC and BIC of the four:
 """)
 
-# ╔═╡ 7b5d9cc3-59b1-533a-b201-3147f3b38662
-"10-fold cross-validated root-mean-squared prediction error of formula `f`."
-function cv_rmse(f, data; k = 10, seed = 2026, contrasts = coding)
-	folds = shuffle(Xoshiro(seed), mod1.(1:nrow(data), k))
-	sse = 0.0
-	for j in 1:k
-		train, test = data[folds .!= j, :], data[folds .== j, :]
-		mj = lm(f, train; contrasts)
-		sse += sum(abs2, test.cnt .- predict(mj, test))
-	end
-	sqrt(sse / nrow(data))
-end
-
-# ╔═╡ 0fc8bbc0-a2f8-5a5e-a677-0e23b60ff107
-let
-	rows = map(temp_formulas) do (name, f)
-		m = lm(f, dm; contrasts = coding)
-		(name, length(coef(m)), fmt(r2(m), 4), fmt(adjr2(m), 4), fmt(sqrt(deviance(m) / dof_residual(m)), 1),
-		 fmt(aic(m), 1), fmt(bic(m), 1), fmt(cv_rmse(f, dm), 1))
-	end
-	mdtable(DataFrame([n => getindex.(rows, i) for (i, n) in enumerate(
-		["Temperature term", "Parameters", "R²", "Adj. R²", "σ̂", "AIC", "BIC", "10-fold CV RMSE"])]))
-end
-
-# ╔═╡ d16c3251-6dec-54f3-84e3-5cc5b1947163
+# ╔═╡ 683c0cec-1766-52d0-8c92-f66902c5fc10
 """
-    gvif_table(m; merge = [])
+    vif_table(m)
 
-Generalized variance inflation factors (Fox & Monette, 1992) for each term of `m`,
-like `car::vif()`. For a one-column term the GVIF equals the ordinary VIF.
-`merge` pools several terms, e.g. `[["tc", "tc ^ 2", "tc ^ 3"] => "poly(tc, 3)"]`.
+Variance inflation factor ``1/(1 - R_j^2)`` of every coefficient except the intercept, where
+``R_j^2`` comes from regressing column ``j`` of the model matrix on all the other columns.
 """
-function gvif_table(m; merge = Pair{Vector{String}, String}[])
+function vif_table(m)
 	X = modelmatrix(m)
-	a = StatsModels.asgn(formula(m))
-	tnames = [replace(string(t), r"^:\((.*)\)$" => s"\1") for t in formula(m).rhs.terms]   # ":(tc ^ 2)" → "tc ^ 2"
-	cols = findall(>(1), a)                       # drop the intercept (term 1)
-	labels = tnames[a[cols]]
-	for (group, newname) in merge
-		labels = [l in group ? newname : l for l in labels]
+	names_ = coefnames(m)
+	keep = findall(!=("(Intercept)"), names_)
+	vifs = map(keep) do j
+		others = setdiff(axes(X, 2), [j])                  # includes the intercept column
+		xj = X[:, j]; Z = X[:, others]
+		rss = sum(abs2, xj - Z * (Z \ xj))
+		1 / (rss / sum(abs2, xj .- mean(xj)))               # 1 / (1 - R²ⱼ)
 	end
-	R = cor(X[:, cols]); dR = det(R)
-	rows = map(unique(labels)) do l
-		J = findall(==(l), labels); K = findall(!=(l), labels)
-		g = det(R[J, J]) * det(R[K, K]) / dR
-		(Term = l, Df = length(J), GVIF = g, GVIF_adj = g^(1 / (2 * length(J))))
-	end
-	DataFrame(rows)
+	DataFrame(term = names_[keep], vif = vifs)
 end
 
 # ╔═╡ 3f0f5d24-c311-55ea-8c66-77a1594ef1cf
-vif_full = gvif_table(m_full);
+vif_full = vif_table(m_full);
 
 # ╔═╡ 0dc17052-2e7f-5d2f-bcf6-61970557a088
-mdtable(DataFrame("Term" => vif_full.Term, "Df" => vif_full.Df, "GVIF" => fmt.(vif_full.GVIF, 2),
-                  "GVIF^(1/(2·Df))" => fmt.(vif_full.GVIF_adj, 2)))
+mdtable(DataFrame("Coefficient" => vif_full.term, "VIF" => fmt.(vif_full.vif, 2)))
 
 # ╔═╡ 7578107e-672a-57ef-94df-a931f46ae9ca
 collinearity = let m = m_full, nm = coefnames(m_full)
 	pv = 2 .* ccdf.(TDist(dof_residual(m)), abs.(coef(m) ./ stderror(m)))
 	month_rows = findall(startswith("month"), nm)
+	vif(name) = vif_full.vif[findfirst(==(name), vif_full.term)]
 	(se_tc_cubic = stderror(m_cubic)[findfirst(==("tc"), coefnames(m_cubic))],
 	 se_tc_full = stderror(m)[findfirst(==("tc"), nm)],
 	 p_atemp = pv[findfirst(==("atemp_c"), nm)],
 	 n_month_sig = count(<(0.05), pv[month_rows]),
-	 vif_tc = vif_full.GVIF[findfirst(==("tc"), vif_full.Term)],
-	 vif_atemp = vif_full.GVIF[findfirst(==("atemp_c"), vif_full.Term)],
-	 gvif_month = vif_full.GVIF[findfirst(==("month"), vif_full.Term)],
+	 vif_tc = vif("tc"), vif_atemp = vif("atemp_c"),
+	 vif_season_max = maximum(vif_full.vif[startswith.(vif_full.term, "season")]),
+	 vif_month_max = maximum(vif_full.vif[startswith.(vif_full.term, "month")]),
 	 r_temp_atemp = cor(dm.temp_c, dm.atemp_c))
 end
 
@@ -632,12 +619,12 @@ Markdown.parse("""
 **How the problem shows up.**
 
 1. **The summary block.** Compared with the cubic model of Section 4, the standard error of the linear temperature term jumps from $(fmt(collinearity.se_tc_cubic, 1)) to $(fmt(collinearity.se_tc_full, 1)). `atemp_c` is not significant (``p`` = $(fmt(collinearity.p_atemp, 2))) even though feels-like temperature obviously matters, and $(collinearity.n_month_sig == 0 ? "none" : string(collinearity.n_month_sig)) of the 11 month dummies $(collinearity.n_month_sig == 1 ? "is" : "are") significant at the 5 % level even though season and temperature clearly are. Large standard errors on predictors that should matter are the classic symptom of predictors that carry the same information.
-2. **The VIFs.** The variance inflation factor of predictor ``j`` is ``\\text{VIF}_j = 1/(1 - R_j^2)``, where ``R_j^2`` is the ``R^2`` from regressing ``x_j`` on all the other predictors. It is the factor by which ``\\text{Var}(\\hat\\beta_j)`` is inflated compared with uncorrelated predictors, and values above 10 (above 5 for some authors) signal a problem. For factors with several dummies the table reports the generalized VIF (GVIF; Fox & Monette, 1992) and ``\\text{GVIF}^{1/(2\\,df)}``, which is on the scale of ``\\sqrt{\\text{VIF}}``. Here `tc` has a VIF of $(fmt(collinearity.vif_tc, 1)) and `atemp_c` $(fmt(collinearity.vif_atemp, 1)): the two temperatures are nearly the same variable (``r`` = $(fmt(collinearity.r_temp_atemp, 3))). Month (GVIF = $(fmt(collinearity.gvif_month, 0))) largely repeats season.
+2. **The VIFs.** The variance inflation factor of predictor ``j`` is ``\\text{VIF}_j = 1/(1 - R_j^2)``, where ``R_j^2`` is the ``R^2`` from regressing ``x_j`` on all the other predictors. It is the factor by which ``\\text{Var}(\\hat\\beta_j)`` is inflated compared with uncorrelated predictors, and values above 10 signal a problem. Here `tc` has a VIF of $(fmt(collinearity.vif_tc, 1)) and `atemp_c` $(fmt(collinearity.vif_atemp, 1)): the two temperatures are nearly the same variable (``r`` = $(fmt(collinearity.r_temp_atemp, 3))). The season dummies reach $(fmt(collinearity.vif_season_max, 1)) and the month dummies $(fmt(collinearity.vif_month_max, 1)), because month and season carry largely the same information.
 
 The cure is to keep only one variable from each redundant group. Backward selection, next, makes that choice by AIC and BIC.
 """)
 
-# ╔═╡ 1e05a5cb-5244-507a-88ac-35c5ac0d3c79
+# ╔═╡ 0143083b-8b8d-524d-9ca4-250b5c3fb636
 """
     fit_terms(names; data = dm)
 
@@ -649,7 +636,7 @@ function fit_terms(names; data = dm)
 	lm(term(:cnt) ~ foldl(+, pieces), data; contrasts = coding)
 end
 
-# ╔═╡ 3fcb3680-3d74-5915-a5ee-07affeacf74b
+# ╔═╡ 7b5d9cc3-59b1-533a-b201-3147f3b38662
 """
     backward_step(names, k; data = dm)
 
@@ -723,22 +710,22 @@ Each interval is ``\\hat\\beta_j \\pm t_{0.975,\\,n-p}\\,\\text{SE}(\\hat\\beta_
 curvature_check = let m = m_final
 	m_sq = lm(@formula(cnt ~ year + season + daytype + weather + tc + tc^2 + tc^3 + hum_pct + hum_pct^2 + wind_kmh + wind_kmh^2),
 	          dm; contrasts = coding)
-	merge(nested_ftest(m, m_sq), (r2_gain = r2(m_sq) - r2(m), aic_drop = aic(m) - aic(m_sq)))
+	merge(nested_ftest(m, m_sq), (r2_gain = r2(m_sq) - r2(m),))
 end
 
 # ╔═╡ c42c9e27-18a0-5873-bd42-c7709a75bf6e
 Markdown.parse("""
-Adding squared humidity and wind terms is statistically detectable (``F`` = $(fmt(curvature_check.F, 2)) on $(curvature_check.df1) and $(curvature_check.df2) df, ``p`` $(fmt_p(curvature_check.p))), but it raises ``R^2`` by only $(fmt(curvature_check.r2_gain, 3)). The baseline therefore keeps the simpler linear terms, whose coefficients are directly interpretable, and the linearity assumption is reasonable.
+Adding squared humidity and wind terms is statistically detectable (nested ``F`` = $(fmt(curvature_check.F, 2)) on $(curvature_check.df1) and $(curvature_check.df2) df, ``p`` $(fmt_p(curvature_check.p))), but it raises ``R^2`` by only $(fmt(curvature_check.r2_gain, 3)). The baseline therefore keeps the simpler linear terms, whose coefficients are directly interpretable, and the linearity assumption is reasonable.
 
 ### 8.2 Constant variance
 """)
 
-# ╔═╡ 9385f2bb-02d5-5601-b607-21ab83cbc7af
+# ╔═╡ 1cba0456-559b-51f2-b168-b54671242470
 low_end = let e = residuals(m_final), ŷ = fitted(m_final)
 	(n = count(<(1000), ŷ), mean_resid = mean(e[ŷ .< 1000]), n_negative = count(<(0), ŷ))
 end
 
-# ╔═╡ 03c595c5-a8c8-59c7-a678-23ec0f6c7ca8
+# ╔═╡ 9385f2bb-02d5-5601-b607-21ab83cbc7af
 spread = let e = residuals(m_final), ŷ = fitted(m_final)
 	q = quantile(ŷ, [1 / 3, 2 / 3])
 	third = [y < q[1] ? 1 : y < q[2] ? 2 : 3 for y in ŷ]
@@ -746,15 +733,24 @@ spread = let e = residuals(m_final), ŷ = fitted(m_final)
 	 sd_2011 = std(e[dm.year .== "2011"]), sd_2012 = std(e[dm.year .== "2012"]))
 end
 
-# ╔═╡ 2a26b984-1664-5c18-9897-d084443069a5
-let g = gvif_table(m_final; merge = [["tc", "tc ^ 2", "tc ^ 3"] => "poly(tc, 3)"])
-	mdtable(DataFrame("Term" => g.Term, "Df" => g.Df, "GVIF" => fmt.(g.GVIF, 2), "GVIF^(1/(2·Df))" => fmt.(g.GVIF_adj, 2)))
+# ╔═╡ 03c595c5-a8c8-59c7-a678-23ec0f6c7ca8
+Markdown.parse("""
+**Reading the plots.** Over most of the range the smoother in the residuals-vs-fitted plot stays near zero and the vertical spread is similar: the residual SD is $(fmt(spread.sd_thirds[1], 0)), $(fmt(spread.sd_thirds[2], 0)) and $(fmt(spread.sd_thirds[3], 0)) in the lower, middle and upper thirds of the fitted values, so there is no fan shape. The scale–location smoother is also nearly flat. The exception is the **low end**. On the $(low_end.n) days with fitted values below 1,000 (cold, wet or windy days) the model under-predicts by $(fmt(low_end.mean_resid, 0)) rentals on average, and on $(low_end.n_negative) of them it predicts a *negative* number of rentals. A linear model cannot respect the floor at zero, which is something the count models of the final project will address. The spread also differs by **year**: SD $(fmt(spread.sd_2011, 0)) in 2011 vs. $(fmt(spread.sd_2012, 0)) in 2012. The system grew a lot between the two years, and its day-to-day noise grew with it.
+
+So the constant-variance assumption holds roughly across fitted values but not across years. The estimates stay unbiased, but the standard errors are less exact than the table suggests, so ``p``-values close to 0.05 should be read with care.
+
+### 8.3 Normality of the residuals
+""")
+
+# ╔═╡ cfd3c36b-5c47-522f-a3c8-3c6fc989ecd6
+let v = vif_table(m_final)
+	mdtable(DataFrame("Coefficient" => [get(pretty_term, t, t) for t in v.term], "VIF" => fmt.(v.vif, 2)))
 end
 
-# ╔═╡ 02b8eb52-3091-56c9-baed-0163c38821f4
+# ╔═╡ 2a26b984-1664-5c18-9897-d084443069a5
 m_no_sandy = fit_terms(step_aic.selected; data = filter(r -> !(r.date in (Date(2012, 10, 29), Date(2012, 10, 30))), dm));
 
-# ╔═╡ 22039358-cdb9-591a-9886-9b4f9246dd14
+# ╔═╡ d8ff42f8-1f3e-5c15-85f4-0b5f735b6d3c
 mdtable(DataFrame("Term" => [get(pretty_term, t, t) for t in coefnames(m_final)],
                   "All days" => fmt_coef.(coef(m_final)), "Without Sandy days" => fmt_coef.(coef(m_no_sandy)),
                   "Change (%)" => fmt.(100 .* (coef(m_no_sandy) .- coef(m_final)) ./ abs.(coef(m_final)), 1)))
@@ -775,7 +771,7 @@ end
 Markdown.parse("""
 **(a) Terms eliminated by backward AIC, in order:** $(join(["$(i). `$(t)`" for (i, t) in enumerate(step_aic.dropped)], ", ")). After that, no deletion lowers AIC.
 
-**(b) Backward BIC.** BIC charges ``\\log n`` = $(fmt(log(nrow(dm)), 2)) per parameter instead of 2, so it penalizes extra terms more heavily and can only end with the same number of terms as AIC or fewer. Here it drops the same $(length(step_bic.dropped)) terms ($(join("`" .* step_bic.dropped .* "`", ", "))) and $(step_bic.selected == step_aic.selected ? "selects the same model" : "selects a smaller model"). Day type is the closest call: removing it raises BIC by only $(fmt(bic_daytype_margin, 1)).
+**(b) Backward BIC.** BIC charges ``\\log n`` = $(fmt(log(nrow(dm)), 2)) per parameter instead of 2, so it penalizes extra terms more heavily and usually ends with a model no larger than AIC's. Here it drops the same $(length(step_bic.dropped)) terms ($(join("`" .* step_bic.dropped .* "`", ", "))) and $(step_bic.selected == step_aic.selected ? "selects the same model" : "selects a smaller model"). Day type is the closest call: removing it raises BIC by only $(fmt(bic_daytype_margin, 1)).
 
 ### 6.1 The final model
 
@@ -790,7 +786,7 @@ Y_i = {} & \\beta_0 + \\beta_1\\,\\text{Yr2012}_i + \\beta_2\\,\\text{Spring}_i 
 ```
 """)
 
-# ╔═╡ 82701de8-7b3d-55a7-b463-125483ad7e5c
+# ╔═╡ d16c3251-6dec-54f3-84e3-5cc5b1947163
 """
     drop1_display(names)
 
@@ -811,7 +807,7 @@ end
 # ╔═╡ fea21b6a-48f9-54ed-86d6-7c94d4ca2423
 drop1_display(step_aic.selected)
 
-# ╔═╡ e3860fe1-35a6-52b7-a265-61a04c1caecd
+# ╔═╡ 1e05a5cb-5244-507a-88ac-35c5ac0d3c79
 "Coefficient table with t-based confidence intervals (rendered as Markdown)."
 function coef_display(m; level = 0.95)
 	df = dof_residual(m); tq = quantile(TDist(df), (1 + level) / 2)
@@ -826,14 +822,14 @@ end
 # ╔═╡ 77017bd9-3dd7-5844-be4c-11b4bf4976ac
 coef_display(m_final)
 
-# ╔═╡ 206a98b3-cc43-5051-81b6-c0f6243e4ebe
+# ╔═╡ 3fcb3680-3d74-5915-a5ee-07affeacf74b
 "Estimate, SE and t-based CI of every coefficient, keyed by coefficient name."
 function coef_ci(m; level = 0.95)
 	tq = quantile(TDist(dof_residual(m)), (1 + level) / 2)
 	Dict(n => (b = b, se = s, lo = b - tq * s, hi = b + tq * s) for (n, b, s) in zip(coefnames(m), coef(m), stderror(m)))
 end
 
-# ╔═╡ fd92b114-882b-5d58-b796-65f16b7ed036
+# ╔═╡ 82701de8-7b3d-55a7-b463-125483ad7e5c
 "Two-sided t-test of H₀: β = 0 for the coefficient named `name`."
 function coef_ttest(m, name; level = 0.95)
 	i = findfirst(==(name), coefnames(m))
@@ -864,10 +860,10 @@ Markdown.parse("""
 
 ### 7.3 Term-by-term ``F``-tests
 
-Dropping one term at a time (R's `drop1(model, test = "F")`) tests each factor and the temperature polynomial as a whole:
+Each row compares the final model with the nested model that drops one term (R's `drop1(model, test = "F")`). This tests every factor and the temperature polynomial as a whole:
 """)
 
-# ╔═╡ 1c616f39-34a0-5edb-afa8-ad0b5422e1f4
+# ╔═╡ e3860fe1-35a6-52b7-a265-61a04c1caecd
 """
     predict_day(m, data, day)
 
@@ -909,11 +905,12 @@ Markdown.parse("""
 The observed $(fmt(tg.y, 0)) rentals fall far below even the prediction interval, so Thanksgiving behaves very differently from an average holiday. **Independence Day 2011**, a warm holiday, shows the opposite pattern: predicted $(fmt(j4.fit, 0)), observed $(fmt(j4.y, 0)), residual +$(fmt(j4.resid, 0)). A cold holiday that is over-predicted and a warm holiday that is under-predicted suggest that the holiday effect depends on temperature. That is the interaction M3 will test.
 """)
 
-# ╔═╡ 534d78c1-20ba-5c47-99c9-4eb9ccba4ec9
+# ╔═╡ 206a98b3-cc43-5051-81b6-c0f6243e4ebe
 """
     lm_diagnostics(m, data)
 
-Fitted values, residuals, standardized and studentized residuals, leverage and Cook's distance.
+Fitted values, residuals, standardized residuals, leverage and Cook's distance (as in R's
+`rstandard`, `hatvalues` and `cooks.distance`).
 """
 function lm_diagnostics(m, data)
 	X = modelmatrix(m); e = residuals(m)
@@ -921,161 +918,72 @@ function lm_diagnostics(m, data)
 	C = cholesky(Symmetric(X' * X))
 	h = vec(sum(abs2, X / C.U; dims = 2))                    # hᵢᵢ = xᵢ'(X'X)⁻¹xᵢ
 	s2 = sum(abs2, e) / (n - p)
-	r_std = e ./ sqrt.(s2 .* (1 .- h))                       # internally studentized
-	s2_i = ((n - p) .* s2 .- e .^ 2 ./ (1 .- h)) ./ (n - p - 1)
-	r_stu = e ./ sqrt.(s2_i .* (1 .- h))                     # externally studentized
+	r_std = e ./ sqrt.(s2 .* (1 .- h))                       # standardized residuals
 	DataFrame(date = data.date, label = data.label, daytype = data.daytype, weather = data.weather,
-	          cnt = response(m), fitted = fitted(m), resid = e, r_std = r_std, r_stu = r_stu,
+	          cnt = response(m), fitted = fitted(m), resid = e, r_std = r_std,
 	          leverage = h, cooks_d = r_std .^ 2 ./ p .* h ./ (1 .- h))
 end
 
 # ╔═╡ b28a7a1e-7604-5cd8-beec-f45d1fed301e
 dx = lm_diagnostics(m_final, dm);
 
-# ╔═╡ 3584448f-db33-501d-9d2e-aded839ec383
-normality = let e = residuals(m_final)
-	sw = ShapiroWilkTest(e)
-	(W = sw.W, p = pvalue(sw), skewness = skewness(e), excess_kurtosis = kurtosis(e),
-	 beyond_3 = count(r -> abs(r) > 3, dx.r_stu))
-end
+# ╔═╡ 934bff83-0986-5c08-9ab8-a1b8a906869e
+normality = (share_beyond_2 = mean(abs.(dx.r_std) .> 2), beyond_3 = count(r -> abs(r) > 3, dx.r_std),
+             below_3 = count(<(-3), dx.r_std), min_r = minimum(dx.r_std), min_day = dx.date[argmin(dx.r_std)])
 
-# ╔═╡ d7e240c4-43e9-5623-9c2f-c05e1632613b
-influence_summary = let p = size(modelmatrix(m_final), 2), n = nrow(dx)
-	high_h = dx.leverage .> 2p / n
-	(p = p, n = n, h_mean = p / n, h_cut = 2p / n, n_high_h = count(high_h),
-	 n_high_h_rare = count(high_h .& ((dx.weather .== "Light rain/snow") .| (dx.daytype .== "Holiday"))),
-	 max_h = maximum(dx.leverage), n_cook = count(>(4 / n), dx.cooks_d), max_cook = maximum(dx.cooks_d),
-	 max_cook_day = dx.date[argmax(dx.cooks_d)],
-	 max_h_day = dx.date[argmax(dx.leverage)], max_h_temp = dm.temp_c[argmax(dx.leverage)],
-	 max_h_rstu = dx.r_stu[argmax(dx.leverage)])
-end
-
-# ╔═╡ 123aff1a-ce1a-5c4e-abe7-4acc1e8abe67
+# ╔═╡ c08549a5-8d31-5bf5-9998-eac01a9a8fec
 Markdown.parse("""
-The Q–Q plot is straight in the middle, but the lowest residuals fall well below the line: the residual distribution has a **heavy left tail** (skewness $(fmt(normality.skewness, 2)), excess kurtosis $(fmt(normality.excess_kurtosis, 2))). The Shapiro–Wilk test confirms the departure (``W`` = $(fmt(normality.W, 3)), ``p`` $(fmt_p(normality.p))). The tail is made up of the days the model cannot know about, such as storms and holidays like Thanksgiving: $(normality.beyond_3) days have studentized residuals beyond ±3.
-
-With ``n`` = $(nrow(dm)), the central limit theorem keeps the ``t``-based intervals and tests for the coefficients approximately valid. Prediction intervals for single days rely directly on normal errors, so they are less trustworthy in the tails.
-
-### 8.4 Leverage and influence
-
-* **Leverage** ``h_{ii} = x_i^\\top (X^\\top X)^{-1} x_i`` measures how unusual a day's predictor values are. The average is ``p/n`` = $(fmt(influence_summary.h_mean, 3)), and the usual flag is ``2p/n`` = $(fmt(influence_summary.h_cut, 3)).
-* **Studentized residuals** larger than about ±3 flag outliers in ``y``.
-* **Cook's distance** ``D_i = \\dfrac{r_i^2}{p}\\,\\dfrac{h_{ii}}{1 - h_{ii}}`` combines the two. It measures how much all the fitted values move when day ``i`` is deleted; ``D_i > 4/n`` is a common screening flag and ``D_i > 0.5`` a serious one.
+The Q–Q plot is straight in the middle, but the lowest residuals fall well below the line: the residuals have a **heavy left tail**. If the errors were normal, about 5 % of standardized residuals would exceed ±2 and only about 0.3 % (2 of $(nrow(dm)) days) would exceed ±3. Here $(fmt(100 * normality.share_beyond_2, 1)) % exceed ±2, close to that, but $(normality.beyond_3) days exceed ±3, the most extreme being $(Dates.format(normality.min_day, "d u yyyy")) (``r`` = $(fmt(normality.min_r, 2))). The table lists them. Of these $(normality.beyond_3) days, $(normality.below_3) are over-predictions: Hurricanes Sandy (two days) and Irene, Thanksgiving 2012 and the weekend after it, and three days that the daily file codes as mist/cloudy although the hourly file (`hour.csv`) records several hours of light rain on them. These are days the model cannot know about: special events, and rain that a single weather code per day misses.
 """)
 
 # ╔═╡ 6c29df36-6f08-5490-a746-a8919f58520d
-Markdown.parse("""
-**Reading the plots.** $(influence_summary.n_high_h) days exceed the ``2p/n`` leverage flag, and $(influence_summary.n_high_h_rare) of them are light-rain/snow days or holidays. These are rare categories (21 days each), so each such day is necessarily far from the center of the predictor space; that is a property of the design, not an error. The highest leverage (``h`` = $(fmt(influence_summary.max_h, 3))) belongs to the coldest day in the data, $(Dates.format(influence_summary.max_h_day, "d u yyyy")) ($(fmt(influence_summary.max_h_temp, 1)) °C), where the cubic temperature terms are extreme; its studentized residual is only $(fmt(influence_summary.max_h_rstu, 2)), so it is not influential. The largest Cook's distance is $(fmt(influence_summary.max_cook, 3)) ($(Dates.format(influence_summary.max_cook_day, "d u yyyy")), Hurricane Sandy), far below 0.5, so **no single day controls the fit**. The most influential days in the table are real events (two hurricanes, both Thanksgivings, Independence Day, a snowstorm) or cold, wet days for which the model predicts a negative count. None of them is a data error, so all stay in the model. Section 8.7 checks how much the hurricane days move the estimates.
-
-### 8.5 Independence
-
-The days form a time series, so residuals on neighboring days may be correlated.
-""")
-
-# ╔═╡ 8f0f82d1-0133-5e92-bc63-15f82f2c3e6b
-independence = let e = dx.resid[sortperm(dx.date)]
-	r = autocor(e, [1, 7, 14])
-	(durbin_watson = sum(abs2, diff(e)) / sum(abs2, e), lag1 = r[1], lag7 = r[2], lag14 = r[3])
+influence_summary = let p = size(modelmatrix(m_final), 2), n = nrow(dx)
+	high_h = dx.leverage .> 2p / n
+	i = argmax(dx.leverage)
+	(p = p, n = n, h_mean = p / n, h_cut = 2p / n, n_high_h = count(high_h),
+	 n_high_h_rare = count(high_h .& ((dx.weather .== "Light rain/snow") .| (dx.daytype .== "Holiday"))),
+	 n_rain = count(==("Light rain/snow"), dx.weather), n_holiday = count(==("Holiday"), dx.daytype),
+	 max_h = dx.leverage[i], max_h_day = dx.date[i], max_h_temp = dm.temp_c[i], max_h_r = dx.r_std[i],
+	 max_cook = maximum(dx.cooks_d), max_cook_day = dx.date[argmax(dx.cooks_d)])
 end
+
+# ╔═╡ d859bbe4-8de5-56d5-889e-4966555a7609
+Markdown.parse("""
+With ``n`` = $(nrow(dm)), the ``t``-based intervals and tests for the coefficients are still approximately valid. Prediction intervals for single days rely directly on normal errors, so they are less trustworthy in the tails.
+
+### 8.4 Leverage and influence
+
+* **Leverage** ``h_{ii} = x_i^\\top (X^\\top X)^{-1} x_i`` measures how unusual a day's predictor values are. The average leverage is ``p/n`` = $(fmt(influence_summary.h_mean, 3)), and days above ``2p/n`` = $(fmt(influence_summary.h_cut, 3)) deserve a closer look.
+* **Cook's distance** ``D_i = \\dfrac{r_i^2}{p}\\,\\dfrac{h_{ii}}{1 - h_{ii}}`` combines the size of the residual with leverage. It measures how much the fitted values change when day ``i`` is left out; ``D_i`` near 0.5 or above marks an influential point. As in R's plots, the three largest values are labeled.
+""")
 
 # ╔═╡ 13e28fbf-f753-55f4-8bcf-95ab485955a4
 Markdown.parse("""
-The residuals are **positively autocorrelated**: the lag-1 autocorrelation is $(fmt(independence.lag1, 2)) (the dashed band is ``\\pm 1.96/\\sqrt{n}``) and the Durbin–Watson statistic is $(fmt(independence.durbin_watson, 2)), well below the value of 2 expected under independence. Smaller peaks at multiples of 7 days (lag 7: $(fmt(independence.lag7, 2)); lag 14: $(fmt(independence.lag14, 2))) point to a weekly pattern beyond the weekend/working-day split. Consecutive days share conditions the model does not see, such as multi-day weather systems, events and gradual growth in membership. The OLS estimates are still unbiased, but the usual standard errors are too small. Newey–West standard errors (8.7) correct for this.
+**Reading the plots.** $(influence_summary.n_high_h) days exceed the ``2p/n`` leverage cut-off, and $(influence_summary.n_high_h_rare) of them are light-rain/snow days or holidays. These are rare categories ($(influence_summary.n_rain) rain/snow days and $(influence_summary.n_holiday) holidays), so each such day necessarily sits far from the center of the predictor space; that is a property of the data, not an error. The highest leverage (``h`` = $(fmt(influence_summary.max_h, 3))) belongs to the coldest day in the data, $(Dates.format(influence_summary.max_h_day, "d u yyyy")) ($(fmt(influence_summary.max_h_temp, 1)) °C), where the cubic temperature terms are extreme. Its standardized residual is only $(fmt(influence_summary.max_h_r, 2)), so it is not influential. The largest Cook's distance is $(fmt(influence_summary.max_cook, 3)) ($(Dates.format(influence_summary.max_cook_day, "d u yyyy")), Hurricane Sandy), far below 0.5, so **no single day controls the fit**. Sandy also has the most negative residual, the kind of point that Problem 6(a) asks you to sketch; here it is an outlier but not an influential one. The most influential days in the table are real events (two hurricanes, both Thanksgivings, Independence Day, a snowstorm and a warm St. Patrick's Day Saturday) or a cold, wet day for which the model predicts a negative count. None of them is a data error, so all stay in the model.
+
+**Sensitivity check.** On 29–30 October 2012 the system was nearly shut down by Hurricane Sandy (22 and 1,096 rentals). Refitting without those two days barely changes the estimates:
+""")
+
+# ╔═╡ 8c5f01cd-b1e0-5499-babb-29cefa12bea8
+same_sign = let e = dx.resid[sortperm(dx.date)]
+	mean(sign.(e[2:end]) .== sign.(e[1:end-1]))
+end
+
+# ╔═╡ f0428f99-1cc0-50b4-8712-fcecf7a0cde0
+Markdown.parse("""
+Residuals tend to stay on the same side of zero for several days in a row. A day's residual has the same sign as the previous day's $(fmt(100 * same_sign, 0)) % of the time, compared with about 50 % if the errors were independent. Consecutive days share conditions the model does not see, such as multi-day weather spells, events and gradual growth in membership. The estimates are still unbiased, but the standard errors are probably somewhat too small, which is another reason to read borderline ``p``-values with care.
 
 ### 8.6 Multicollinearity in the final model
 
-With `atemp_c` and `month` removed, the generalized VIFs are small. The three temperature terms are grouped, because ``T``, ``T^2`` and ``T^3`` are correlated by construction:
+With `atemp_c` and `month` removed, the VIFs of the other predictors are small. The exception is the three temperature terms: ``T``, ``T^2`` and ``T^3`` are functions of the same variable, so they are correlated by construction (centering reduces this but cannot remove it). That inflates their individual standard errors, which is why temperature is tested as a group with a nested ``F``-test (Section 4) and interpreted through its fitted curve (Section 9) rather than coefficient by coefficient:
 """)
 
-# ╔═╡ 6bd45608-925d-58c1-a0e5-cafe0955d309
-"Koenker's studentized Breusch–Pagan test, against all regressors and against the fitted values."
-function breusch_pagan(m)
-	X = modelmatrix(m); u = residuals(m) .^ 2; n = length(u)
-	r2_aux(Z) = 1 - sum(abs2, u - Z * (Z \ u)) / sum(abs2, u .- mean(u))
-	lm_all = n * r2_aux(X); df_all = size(X, 2) - 1
-	lm_fit = n * r2_aux([ones(n) fitted(m)])
-	(lm_all = lm_all, df_all = df_all, p_all = ccdf(Chisq(df_all), lm_all),
-	 lm_fit = lm_fit, p_fit = ccdf(Chisq(1), lm_fit))
-end
-
-# ╔═╡ 1cba0456-559b-51f2-b168-b54671242470
-bp = breusch_pagan(m_final)
-
-# ╔═╡ 0f05e29d-fa30-5e21-be0a-893cc893bf6c
-Markdown.parse("""
-**Reading the plots.** Over most of the range the LOESS line in the residuals-vs-fitted plot stays near zero and the vertical spread is similar: the residual SD is $(fmt(spread.sd_thirds[1], 0)), $(fmt(spread.sd_thirds[2], 0)) and $(fmt(spread.sd_thirds[3], 0)) in the lower, middle and upper thirds of the fitted values, so there is no fan shape. The exception is the **low end**. On the $(low_end.n) days with fitted values below 1,000 (cold, wet or windy days) the model under-predicts by $(fmt(low_end.mean_resid, 0)) rentals on average, and on $(low_end.n_negative) of them it predicts a *negative* number of rentals. An additive linear model cannot respect the floor at zero, and this is the clearest sign that a log-link count model (final project) will fit better. The spread also differs by **year**: SD $(fmt(spread.sd_2011, 0)) in 2011 vs. $(fmt(spread.sd_2012, 0)) in 2012. The system grew a lot between the two years, and its day-to-day noise grew with it.
-
-**Breusch–Pagan test** (Koenker's studentized version) regresses ``e_i^2`` on the predictors and uses ``LM = n R^2_{\\text{aux}} \\sim \\chi^2_{df}`` under ``H_0``: constant variance.
-
-* Against all predictors: ``LM`` = $(fmt(bp.lm_all, 1)) on $(bp.df_all) df, ``p`` $(fmt_p(bp.p_all)). We reject constant variance, because the variance depends on some predictors (chiefly the year).
-* Against the fitted values only: ``LM`` = $(fmt(bp.lm_fit, 2)) on 1 df, ``p`` $(fmt_p(bp.p_fit)). There is no evidence that the variance grows with the mean.
-
-So the constant-variance assumption holds roughly across fitted values but not across years. The estimates stay unbiased, but the usual standard errors can be off; Section 8.7 re-checks the inference with heteroscedasticity-robust standard errors.
-
-### 8.3 Normality of the residuals
-""")
-
-# ╔═╡ 4a891c07-30cd-51ed-97dc-ac9eaa5f7a19
-"HC3 heteroscedasticity-consistent covariance matrix of the OLS estimates."
-function vcov_hc3(m)
-	X = modelmatrix(m); e = residuals(m)
-	XtXi = inv(cholesky(Symmetric(X' * X)))
-	h = vec(sum((X * XtXi) .* X; dims = 2))
-	XtXi * (X' * (X .* (e .^ 2 ./ (1 .- h) .^ 2))) * XtXi
-end
-
-# ╔═╡ 7599cc52-706c-5fde-bbda-114308464a76
-"""
-    vcov_newey_west(m, order; lags)
-
-Newey–West (HAC) covariance with a Bartlett kernel; `order` puts the rows in time order.
-"""
-function vcov_newey_west(m, order; lags)
-	X = modelmatrix(m)[order, :]; e = residuals(m)[order]
-	XtXi = inv(cholesky(Symmetric(X' * X)))
-	u = X .* e
-	S = u' * u
-	for l in 1:lags
-		Γ = u[(l + 1):end, :]' * u[1:(end - l), :]
-		S += (1 - l / (lags + 1)) * (Γ + Γ')
-	end
-	XtXi * S * XtXi
-end
-
-# ╔═╡ 591d23d4-f035-57e9-9a66-1c4b216e0234
-robust = let m = m_final
-	order = sortperm(dm.date)
-	V_hc3, V_nw = vcov_hc3(m), vcov_newey_west(m, order; lags = nw_lags)
-	b = coef(m); se_nw = sqrt.(diag(V_nw))
-	DataFrame(term = coefnames(m), estimate = b, se_ols = stderror(m), se_hc3 = sqrt.(diag(V_hc3)), se_nw = se_nw,
-	          p_ols = 2 .* ccdf.(TDist(dof_residual(m)), abs.(b ./ stderror(m))),
-	          p_nw = 2 .* ccdf.(TDist(dof_residual(m)), abs.(b ./ se_nw)))
-end;
-
-# ╔═╡ 8c5f01cd-b1e0-5499-babb-29cefa12bea8
-mdtable(DataFrame("Term" => [get(pretty_term, t, t) for t in robust.term], "Estimate" => fmt_coef.(robust.estimate),
-                  "SE (OLS)" => fmt_coef.(robust.se_ols), "SE (HC3)" => fmt_coef.(robust.se_hc3),
-                  "SE (Newey–West)" => fmt_coef.(robust.se_nw), "p (OLS)" => pstr.(robust.p_ols), "p (Newey–West)" => pstr.(robust.p_nw)))
-
-# ╔═╡ f0428f99-1cc0-50b4-8712-fcecf7a0cde0
-robust_changes = let r = robust[2:end, :]
-	(ratio_min = minimum(r.se_nw ./ r.se_ols), ratio_max = maximum(r.se_nw ./ r.se_ols),
-	 lost = r.term[(r.p_ols .< 0.05) .& (r.p_nw .>= 0.05)])
-end
-
-# ╔═╡ cfd3c36b-5c47-522f-a3c8-3c6fc989ecd6
-Markdown.parse("""
-The Newey–West standard errors are $(fmt(robust_changes.ratio_min, 1)) to $(fmt(robust_changes.ratio_max, 1)) times the OLS ones. $(isempty(robust_changes.lost) ? "Every coefficient that is significant with OLS standard errors stays significant at the 5 % level" : "Coefficients that lose significance at the 5 % level: " * join("`" .* robust_changes.lost .* "`", ", ") * "; all other conclusions stand").
-
-**Hurricane Sandy.** On 29–30 October 2012 the system was nearly shut down (22 and 1,096 rentals). Refitting without those two days barely changes the estimates:
-""")
-
-# ╔═╡ 98b9ee02-e261-54e5-86fc-88180cef1f06
+# ╔═╡ fd92b114-882b-5d58-b796-65f16b7ed036
 """
     effect_table(m, data, var, values)
 
-Effect display: for each value `v`, set `var = v` on every day, average the model-matrix
-rows and return the predicted mean with a 95 % confidence interval.
+Partial effect: for each value `v`, set `var = v` on every day, average the model-matrix rows
+into ``x_0`` and return the predicted mean ``x_0^\\top\\hat\\beta`` with its 95 % confidence interval.
 """
 function effect_table(m, data, var::Symbol, values; level = 0.95)
 	rhs = formula(m).rhs
@@ -1091,7 +999,7 @@ function effect_table(m, data, var::Symbol, values; level = 0.95)
 	DataFrame(rows)
 end
 
-# ╔═╡ 2e58cdde-e6b3-5344-a92c-4e71d3787e78
+# ╔═╡ 22039358-cdb9-591a-9886-9b4f9246dd14
 effects = let m = m_final
 	grid(v, k) = collect(range(quantile(dm[!, v], 0.01), quantile(dm[!, v], 0.99); length = k))
 	temp = effect_table(m, dm, :tc, grid(:tc, 80))
@@ -1106,30 +1014,7 @@ effects = let m = m_final
 	(; temp, hum, wind, weather, daytype, year)
 end;
 
-# ╔═╡ 6cd0859e-fac1-59a6-a6ed-511e9f9a8ce7
-"Slope of the cubic temperature effect (rentals per +1 °C) at each temperature, with a 95 % CI."
-function temp_marginal_effects(m, temps; level = 0.95)
-	nm = coefnames(m); β, V = coef(m), vcov(m)
-	idx = [findfirst(==(c), nm) for c in ("tc", "tc ^ 2", "tc ^ 3")]
-	tq = quantile(TDist(dof_residual(m)), (1 + level) / 2)
-	rows = map(temps) do temp
-		t = temp - 20
-		g = zeros(length(β)); g[idx] = [1, 2t, 3t^2]
-		s = dot(g, β); se = sqrt(g' * V * g)
-		(temperature = temp, slope = s, lower = s - tq * se, upper = s + tq * se)
-	end
-	DataFrame(rows)
-end
-
-# ╔═╡ e7e18744-b85d-570e-9f26-3deeb819d163
-temp_slopes = temp_marginal_effects(m_final, [0, 5, 10, 15, 20, 25, 30])
-
-# ╔═╡ fb959d59-774a-5f92-b4ea-8857c0244794
-mdtable(DataFrame("Temperature" => string.(temp_slopes.temperature, " °C"),
-                  "Change in predicted rentals per +1 °C" => fmt.(temp_slopes.slope, 0),
-                  "95 % CI" => string.("(", fmt.(temp_slopes.lower, 0), ", ", fmt.(temp_slopes.upper, 0), ")")))
-
-# ╔═╡ db2eb977-c594-57ef-8048-82771ef025bd
+# ╔═╡ 1c616f39-34a0-5edb-afa8-ad0b5422e1f4
 "Temperature (°C) at which the fitted cubic temperature effect peaks."
 function temp_peak(m)
 	nm = coefnames(m); β = coef(m)
@@ -1138,54 +1023,69 @@ function temp_peak(m)
 	20 + only(filter(t -> 2b2 + 6b3 * t < 0, roots))      # the root where the curve is concave
 end
 
-# ╔═╡ e9f21b17-e6f1-5046-92c2-5c558b143ae4
-key = let m = m_final, E = effects
+# ╔═╡ 2e58cdde-e6b3-5344-a92c-4e71d3787e78
+temp_predictions = let m = m_final
+	peak = temp_peak(m)
+	temps = sort(vcat([0.0, 5, 10, 15, 20, 25, 30], peak))
+	t = effect_table(m, dm, :tc, temps .- 20)
+	t.temperature = temps
+	t
+end;
+
+# ╔═╡ ea7eb588-da33-58c9-8514-431796a2cc0f
+mdtable(DataFrame("Temperature" => [string(fmt(x, 1), " °C", isapprox(x, temp_peak(m_final)) ? " (peak)" : "") for x in temp_predictions.temperature],
+                  "Predicted rentals/day" => fmt.(temp_predictions.fit, 0),
+                  "95 % CI for the mean" => string.("(", fmt.(temp_predictions.lower, 0), ", ", fmt.(temp_predictions.upper, 0), ")")))
+
+# ╔═╡ e7e18744-b85d-570e-9f26-3deeb819d163
+key = let m = m_final
 	ci = coef_ci(m)
 	peak = temp_peak(m)
 	at(t) = only(effect_table(m, dm, :tc, [t - 20]).fit)
-	mild = temp_slopes.slope[5 .<= temp_slopes.temperature .<= 15]
-	(peak = peak, peak_f = 32 + 9 / 5 * peak, at_peak = at(peak), at10 = at(10), at20 = at(20), at30 = at(30),
-	 slope_mild_lo = minimum(mild), slope_mild_hi = maximum(mild),
-	 tc = ci["tc"], hum = ci["hum_pct"], wind = ci["wind_kmh"], mist = ci["weather: Mist/cloudy"],
+	(peak = peak, peak_f = 32 + 9 / 5 * peak, at_peak = at(peak), at0 = at(0), at10 = at(10), at20 = at(20), at30 = at(30),
+	 hum = ci["hum_pct"], wind = ci["wind_kmh"], mist = ci["weather: Mist/cloudy"],
 	 rain = ci["weather: Light rain/snow"], holiday = ci["daytype: Holiday"], weekend = ci["daytype: Weekend"],
-	 year = ci["year: 2012"], fall = ci["season: Fall"])
+	 year = ci["year: 2012"])
 end
 
-# ╔═╡ 105a4a50-0a63-5c4c-8871-80b10ffb25bf
+# ╔═╡ fb959d59-774a-5f92-b4ea-8857c0244794
 Markdown.parse("""
-**1. Temperature** (``T``, ``T^2``, ``T^3`` together; panel a). Because temperature enters as a cubic, no single coefficient describes it. The linear coefficient ``\\hat\\beta_T`` = $(fmt(key.tc.b, 1)) is the slope at 20 °C (95 % CI $(fmt(key.tc.lo, 1)) to $(fmt(key.tc.hi, 1)) rentals per °C), and the table above gives the slope at other temperatures. Holding everything else constant, predicted rentals rise by about $(fmt(key.slope_mild_lo, 0))–$(fmt(key.slope_mild_hi, 0)) per extra degree between 5 °C and 15 °C, level off at a peak near $(fmt(key.peak, 1)) °C ($(fmt(key.peak_f, 0)) °F), about $(fmt(key.at_peak, 0)) rentals on an average day, and then fall. A 30 °C day is predicted to have about $(fmt(key.at_peak - key.at30, 0)) fewer rentals than a day at the peak, and a 10 °C day about $(fmt(key.at_peak - key.at10, 0)) fewer.
+**1. Temperature** (``T``, ``T^2``, ``T^3`` together; panel a). Because temperature enters through three terms, its effect is read from the curve and the table rather than from a single coefficient. Holding everything else constant, an average day is predicted to have about $(fmt(key.at0, 0)) rentals at 0 °C, $(fmt(key.at10, 0)) at 10 °C and $(fmt(key.at20, 0)) at 20 °C. Rentals peak at about $(fmt(key.at_peak, 0)) near $(fmt(key.peak, 1)) °C ($(fmt(key.peak_f, 0)) °F) and then fall to $(fmt(key.at30, 0)) at 30 °C, so a 30 °C day has about $(fmt(key.at_peak - key.at30, 0)) fewer rentals than a day at the peak.
 
-**2. Humidity** (``\\hat\\beta_H`` = $(fmt(key.hum.b, 1)); panel b). Each additional percentage point of relative humidity is associated with about $(fmt(-key.hum.b, 0)) fewer rentals per day (95 % CI $(fmt(-key.hum.hi, 1)) to $(fmt(-key.hum.lo, 1)) fewer), or about $(fmt(-10 * key.hum.b, 0)) fewer for a 10-point rise, holding temperature, wind, weather type and the calendar constant.
+**2. Humidity** (``\\hat\\beta_H`` = $(fmt(key.hum.b, 2)); panel b). Each additional percentage point of relative humidity is associated with about $(fmt(-key.hum.b, 0)) fewer rentals per day (95 % CI $(fmt(-key.hum.hi, 1)) to $(fmt(-key.hum.lo, 1)) fewer), or about $(fmt(-10 * key.hum.b, 0)) fewer for a 10-point rise, holding temperature, wind, weather type and the calendar constant.
 
-**3. Wind speed** (``\\hat\\beta_W`` = $(fmt(key.wind.b, 1)); panel c). Each additional km/h of mean wind speed is associated with about $(fmt(-key.wind.b, 0)) fewer rentals (95 % CI $(fmt(-key.wind.hi, 1)) to $(fmt(-key.wind.lo, 1)) fewer), so a day that is 10 km/h windier has about $(fmt(-10 * key.wind.b, 0)) fewer rentals.
+**3. Wind speed** (``\\hat\\beta_W`` = $(fmt(key.wind.b, 2)); panel c). Each additional km/h of mean wind speed is associated with about $(fmt(-key.wind.b, 0)) fewer rentals (95 % CI $(fmt(-key.wind.hi, 1)) to $(fmt(-key.wind.lo, 1)) fewer), so a day that is 10 km/h windier has about $(fmt(-10 * key.wind.b, 0)) fewer rentals.
 
 **4. Precipitation** (``\\hat\\beta_{\\text{RainSnow}}`` = $(fmt(key.rain.b, 0)); panel d). A day with light rain or snow averages about $(fmt(-key.rain.b, 0)) fewer rentals than an otherwise identical clear day (95 % CI $(fmt(-key.rain.hi, 0)) to $(fmt(-key.rain.lo, 0)) fewer), the largest weather effect. Misty or cloudy days average about $(fmt(-key.mist.b, 0)) fewer.
 
-**5. Holiday** (``\\hat\\beta_{\\text{Holiday}}`` = $(fmt(key.holiday.b, 0)); panel e). Holidays average about $(fmt(-key.holiday.b, 0)) fewer rentals than working days (95 % CI $(fmt(-key.holiday.hi, 0)) to $(fmt(-key.holiday.lo, 0)) fewer) after adjusting for weather, season and year, while weekends are not significantly different from working days ($(fmt(key.weekend.b, 0)), ``p`` = $(fmt(ttest_weekend.p, 2))). Holidays are the treatment for M3.
+**5. Holiday** (``\\hat\\beta_{\\text{Holiday}}`` = $(fmt(key.holiday.b, 0)); panel e). Holidays average about $(fmt(-key.holiday.b, 0)) fewer rentals than working days (95 % CI $(fmt(-key.holiday.hi, 0)) to $(fmt(-key.holiday.lo, 0)) fewer) after adjusting for weather, season and year. Weekends are not significantly different from working days ($(fmt(key.weekend.b, 0)), ``p`` = $(fmt(ttest_weekend.p, 2))). Holidays are the treatment for M3.
 
-**Context: year (panel f).** The largest single effect is system growth: holding weather and calendar constant, a day in 2012 averages about $(fmt(key.year.b, 0)) more rentals than a comparable day in 2011 (95 % CI $(fmt(key.year.lo, 0)) to $(fmt(key.year.hi, 0))).
+Panel f shows the year term, which mainly reflects the growth of the system. It is a control here rather than a key coefficient: a day in 2012 averages about $(fmt(key.year.b, 0)) more rentals than a comparable day in 2011.
 """)
 
-# ╔═╡ 1a807fce-4535-511c-a246-06e0f8c5740a
+# ╔═╡ e9f21b17-e6f1-5046-92c2-5c558b143ae4
 Markdown.parse("""
 ## 10 · Summary and next steps
 
-* **Model.** Starting from a simple regression on temperature (``R^2`` = $(fmt(r2(m_slr), 3))), the analysis added weather and calendar factors, a cubic temperature term (nested ``F`` = $(fmt(ftest_curv.F, 1)), ``p`` $(fmt_p(ftest_curv.p))) and, after removing the redundant `atemp_c` and `month` by backward AIC and BIC, arrived at a model with ``R^2`` = $(fmt(r2(m_final), 3)) (adjusted $(fmt(adjr2(m_final), 3))) and ``\\hat\\sigma`` = $(fmt(sqrt(deviance(m_final) / dof_residual(m_final)), 0)) rentals/day.
-* **Key effects, holding the rest constant.** Rentals peak near $(fmt(key.peak, 0)) °C. They fall by about $(fmt(-10 * key.hum.b, 0)) per 10 points of humidity, by $(fmt(-10 * key.wind.b, 0)) per 10 km/h of wind and by $(fmt(-key.rain.b, 0)) on rainy or snowy days. Holidays average $(fmt(-key.holiday.b, 0)) fewer rentals than working days, and 2012 averages $(fmt(key.year.b, 0)) more than 2011.
-* **Assumptions.** Linearity holds once temperature is cubic, apart from mild curvature in humidity and wind. The variance is stable across most fitted values but larger in 2012, and the model under-predicts the slowest days. The residuals have a heavy left tail from storms and holidays, and residuals on consecutive days are correlated (lag-1 ``r`` = $(fmt(independence.lag1, 2))). No day is unduly influential (max Cook's ``D`` = $(fmt(influence_summary.max_cook, 2))). Robust standard errors are larger, but the conclusions stand.
-* **Limitations.** A linear model can predict *negative* rentals on cold, wet days (the smallest fitted value is $(fmt(minimum(fitted(m_final)), 0))), and the growth from 2011 to 2012 looks multiplicative rather than additive. Both point toward a Poisson or negative-binomial GLM with a log link in the final project.
+* **Model.** Starting from a simple regression on temperature (``R^2`` = $(fmt(r2(m_slr), 3))), the analysis added weather and calendar factors and a cubic temperature term (nested ``F`` = $(fmt(ftest_curv.F, 1)), ``p`` $(fmt_p(ftest_curv.p))). After backward AIC and BIC removed the redundant `atemp_c` and `month`, it arrived at a model with ``R^2`` = $(fmt(r2(m_final), 3)) (adjusted $(fmt(adjr2(m_final), 3))) and ``\\hat\\sigma`` = $(fmt(sqrt(deviance(m_final) / dof_residual(m_final)), 0)) rentals/day.
+* **Key effects, holding the rest constant.** Rentals peak near $(fmt(key.peak, 0)) °C. They fall by about $(fmt(-10 * key.hum.b, 0)) per 10 points of humidity, by $(fmt(-10 * key.wind.b, 0)) per 10 km/h of wind and by $(fmt(-key.rain.b, 0)) on rainy or snowy days. Holidays average $(fmt(-key.holiday.b, 0)) fewer rentals than working days.
+* **Assumptions.** Linearity holds once temperature is cubic, apart from mild curvature in humidity and wind. The variance is stable across most fitted values but larger in 2012, and the model under-predicts the slowest days. The residuals have a heavy left tail, mostly from storms, Thanksgiving and rainy days that the daily weather code misses, and residuals on consecutive days tend to share a sign. No day is unduly influential (max Cook's ``D`` = $(fmt(influence_summary.max_cook, 2))).
+* **Limitations.** A linear model can predict *negative* rentals on cold, wet days (the smallest fitted value is $(fmt(minimum(fitted(m_final)), 0))), and the growth from 2011 to 2012 looks multiplicative rather than additive. The Poisson and negative-binomial models planned for the final project are designed for counts like these.
 * **Next (M3).** Use day type as the treatment in an ANCOVA, adjust for the weather covariates, and add a holiday × temperature interaction to test whether the holiday effect depends on temperature, as the Thanksgiving and Independence Day residuals suggest.
 """)
 
-# ╔═╡ 36774504-de25-5f18-8bb1-d7880a3f1c35
+# ╔═╡ 534d78c1-20ba-5c47-99c9-4eb9ccba4ec9
 event_notes = Dict(
 	Date(2011, 1, 26)  => "Snowstorm; fitted value is negative",
 	Date(2011, 3, 31)  => "Cold, wet day; fitted value is negative",
 	Date(2011, 7, 4)   => "Independence Day",
 	Date(2011, 8, 27)  => "Hurricane Irene",
+	Date(2011, 9, 23)  => "Coded mist, but rainy for part of the day",
 	Date(2011, 11, 24) => "Thanksgiving",
 	Date(2011, 12, 26) => "Christmas (observed)",
 	Date(2012, 3, 17)  => "Warm Saturday, St. Patrick's Day",
+	Date(2012, 5, 14)  => "Coded mist, but rainy for part of the day",
+	Date(2012, 8, 19)  => "Coded mist, but rainy for part of the day",
 	Date(2012, 10, 29) => "Hurricane Sandy: system nearly shut down",
 	Date(2012, 10, 30) => "Hurricane Sandy, second day",
 	Date(2012, 11, 22) => "Thanksgiving",
@@ -1195,35 +1095,46 @@ event_notes = Dict(
 	Date(2012, 12, 25) => "Christmas Day",
 )
 
-# ╔═╡ d859bbe4-8de5-56d5-889e-4966555a7609
+# ╔═╡ 123aff1a-ce1a-5c4e-abe7-4acc1e8abe67
+extreme_days = let ex = sort(dx[abs.(dx.r_std) .> 3, :], :r_std)
+	DataFrame("Date" => Dates.format.(ex.date, "e d u yyyy"), "Day type" => ex.daytype, "Weather (daily code)" => ex.weather,
+	          "Hours of rain" => [get(rain_hours, d, 0) for d in ex.date], "Rentals" => fmt.(ex.cnt, 0),
+	          "Fitted" => fmt.(ex.fitted, 0), "Std. resid." => fmt.(ex.r_std, 2),
+	          "What happened" => [get(event_notes, d, "") for d in ex.date])
+end;
+
+# ╔═╡ d7e240c4-43e9-5623-9c2f-c05e1632613b
+mdtable(extreme_days; align = "lllrrrrl")
+
+# ╔═╡ f99f9b53-725c-51fb-9a60-e34f242ddd5c
 influential_days = let top = first(sort(dx, :cooks_d; rev = true), 8)
 	DataFrame("Date" => Dates.format.(top.date, "e d u yyyy"), "Day type" => top.daytype, "Weather" => top.weather,
-	          "Rentals" => fmt.(top.cnt, 0), "Fitted" => fmt.(top.fitted, 0), "Studentized resid." => fmt.(top.r_stu, 2),
+	          "Rentals" => fmt.(top.cnt, 0), "Fitted" => fmt.(top.fitted, 0), "Std. resid." => fmt.(top.r_std, 2),
 	          "Leverage" => fmt.(top.leverage, 3), "Cook's D" => fmt.(top.cooks_d, 3),
 	          "What happened" => [get(event_notes, d, "") for d in top.date])
 end;
 
-# ╔═╡ 1bf27a1a-1c7b-52b5-9fe6-d6c47d3ae62b
+# ╔═╡ 8f0f82d1-0133-5e92-bc63-15f82f2c3e6b
 mdtable(influential_days; align = "lllrrrrrl")
 
-# ╔═╡ dee730ee-2889-5b4f-ae31-5622273e4bba
+# ╔═╡ 6bd45608-925d-58c1-a0e5-cafe0955d309
 md"""
 ## Appendix C · Plot helpers
 
-All figures use PlutoPlotly. Each panel is built from a list of traces and then laid out with `make_subplots`. Colors follow a color-blind-safe palette: blue for data, orange for smoothers and flagged points, gray for reference lines.
+All figures use PlutoPlotly. Each panel is built from a list of traces and then laid out with `make_subplots`. Colors follow a color-blind-safe palette: blue for data, orange for smoothers, gray for reference lines.
 """
 
-# ╔═╡ 92e8060a-a6d5-5486-b032-d7179a07cf72
+# ╔═╡ 4a891c07-30cd-51ed-97dc-ac9eaa5f7a19
 pal = (ink = "#0b0b0b", ink2 = "#52514e", muted = "#898781", grid = "#e1e0d9", axis = "#c3c2b7",
        blue = "#2a78d6", orange = "#eb6834",
        blue_pts = "rgba(42, 120, 214, 0.45)", blue_band = "rgba(42, 120, 214, 0.15)", rug = "rgba(137, 135, 129, 0.25)")
 
-# ╔═╡ baa12b25-e765-5a2c-be56-a29f876f8a6a
+# ╔═╡ 7599cc52-706c-5fde-bbda-114308464a76
 "A panel: traces plus its title and axis settings, laid out later by `assemble`."
 panel(traces; title = "", xtitle = "", ytitle = "", xopts = (;), yopts = (;)) =
 	(traces = collect(traces), title = title, xtitle = xtitle, ytitle = ytitle, xopts = xopts, yopts = yopts)
 
-# ╔═╡ a00d7e2c-01d4-5eee-9fd8-66c1e6389d98
+# ╔═╡ 6cd0859e-fac1-59a6-a6ed-511e9f9a8ce7
 "House style: white background, hairline grid, muted axes, compact legend."
 function style!(fig; height = 380, legend = false)
 	relayout!(fig;
@@ -1254,7 +1165,7 @@ function style!(fig; height = 380, legend = false)
 	fig
 end
 
-# ╔═╡ ebe45b85-07cc-5d31-bba3-7cb4d0dacd4a
+# ╔═╡ 98b9ee02-e261-54e5-86fc-88180cef1f06
 """
     assemble(panels; rows, cols, height, legend)
 
@@ -1286,8 +1197,8 @@ function assemble(panels; rows = 1, cols = length(panels), height = 380 * rows, 
 	style!(fig; height, legend)
 end
 
-# ╔═╡ 959f7173-6ca3-5048-9175-607b888bfc62
-"LOESS smoother evaluated on a grid over the range of `x`."
+# ╔═╡ db2eb977-c594-57ef-8048-82771ef025bd
+"Lowess-type smoother (local regression) evaluated on a grid over the range of `x`."
 function loess_xy(x, y; span = 0.6, npts = 80)
 	xf = Float64.(x)
 	model = loess(xf, Float64.(y); span = span)
@@ -1295,77 +1206,73 @@ function loess_xy(x, y; span = 0.6, npts = 80)
 	(x = xs, y = predict(model, xs))
 end
 
-# ╔═╡ 2c41acbd-93e5-5a01-b66f-4454b8070d88
+# ╔═╡ 36774504-de25-5f18-8bb1-d7880a3f1c35
 "Horizontal reference line from `x0` to `x1` at height `y`."
-hline_trace(x0, x1, y; dash = "dot", name = "Reference", legend = false) =
+hline_trace(x0, x1, y; dash = "dot", name = "Zero line", legend = false) =
 	scatter(x = [x0, x1], y = [y, y], mode = "lines", name = name, legendgroup = "ref", showlegend = legend,
 	        line = attr(color = pal.muted, width = 1, dash = dash), hoverinfo = "skip")
 
-# ╔═╡ 4cd4d389-28de-56f3-8569-17ab4ecd52ec
-"Component-plus-residual panel with the model's component and a LOESS smoother."
-function cr_panel(x, pr, comp_x, comp_y; title, xtitle, hover, legend = false, comp_name = "Model component")
-	sm = loess_xy(x, pr)
+# ╔═╡ dee730ee-2889-5b4f-ae31-5622273e4bba
+"Date labels for the most extreme points, as R's `plot(lm)` adds them; `positions` sets each label's side."
+function label_trace(x, y, dates; positions = fill("middle right", length(x)))
+	pad(t, pos) = endswith(pos, "right") ? "  " * t : endswith(pos, "left") ? t * "  " : t
+	scatter(x = x, y = y, mode = "text", showlegend = false, hoverinfo = "skip", cliponaxis = false,
+	        text = [pad(Dates.format(d, "d u yyyy"), pos) for (d, pos) in zip(dates, positions)],
+	        textposition = positions, textfont = attr(size = 10, color = pal.ink2))
+end
+
+# ╔═╡ 92e8060a-a6d5-5486-b032-d7179a07cf72
+"Residuals against one predictor, with a smoother and the zero line (a linearity check)."
+function resid_panel(x, e; title, xtitle, hover, legend = false)
+	sm = loess_xy(x, e)
 	panel([
-		scatter(x = x, y = pr, mode = "markers", name = "Day", legendgroup = "pts", showlegend = legend,
+		scatter(x = x, y = e, mode = "markers", name = "Day", legendgroup = "pts", showlegend = legend,
 		        marker = attr(size = 5, color = pal.blue_pts), text = hover,
-		        hovertemplate = "%{text}<br>x = %{x:.1f}<br>component + residual = %{y:,.0f}<extra></extra>"),
-		scatter(x = comp_x, y = comp_y, mode = "lines", name = comp_name, legendgroup = "comp", showlegend = legend,
-		        line = attr(color = pal.ink2, width = 2, dash = "dash"), hoverinfo = "skip"),
-		scatter(x = sm.x, y = sm.y, mode = "lines", name = "LOESS smoother", legendgroup = "loess", showlegend = legend,
+		        hovertemplate = "%{text}<br>x = %{x:.1f}<br>residual = %{y:,.0f}<extra></extra>"),
+		hline_trace(minimum(x), maximum(x), 0; legend),
+		scatter(x = sm.x, y = sm.y, mode = "lines", name = "Smoother", legendgroup = "loess", showlegend = legend,
 		        line = attr(color = pal.orange, width = 2), hoverinfo = "skip"),
-	]; title, xtitle, ytitle = "Component + residual")
+	]; title, xtitle, ytitle = "Residual")
 end
 
 # ╔═╡ 61ab0fcd-5ebb-56e8-8add-ee4774067bc6
-fig_cr_base = let m = m_base
-	e = residuals(m)
+fig_resid_base = let e = residuals(m_base)
 	specs = [(:temp_c, "(a) Temperature", "Temperature (°C)"),
 	         (:hum_pct, "(b) Humidity", "Relative humidity (%)"),
 	         (:wind_kmh, "(c) Wind speed", "Wind speed (km/h)")]
-	panels = map(enumerate(specs)) do (k, (v, ttl, lab))
-		β = coef(m)[findfirst(==(string(v)), coefnames(m))]
-		x = dm[!, v]
-		xs = collect(range(extrema(x)...; length = 50))
-		cr_panel(x, e .+ β .* (x .- mean(x)), xs, β .* (xs .- mean(x));
-		         title = ttl, xtitle = lab, hover = dm.label, legend = k == 1, comp_name = "Linear fit")
-	end
+	panels = [resid_panel(dm[!, v], e; title = ttl, xtitle = lab, hover = dm.label, legend = k == 1)
+	          for (k, (v, ttl, lab)) in enumerate(specs)]
 	assemble(panels; rows = 1, cols = 3, height = 380, legend = true, shared_ytitle = true)
 end
 
 # ╔═╡ a4ae5ec9-672e-57c8-b733-b1ced8c4040e
-fig_cr_final = let m = m_final
-	e = residuals(m)
-	b(name) = coef(m)[findfirst(==(name), coefnames(m))]
-	g(t) = b("tc") * t + b("tc ^ 2") * t^2 + b("tc ^ 3") * t^3
-	gbar = mean(g.(dm.tc))
-	xs = collect(range(extrema(dm.temp_c)...; length = 80))
-	p1 = cr_panel(dm.temp_c, e .+ g.(dm.tc) .- gbar, xs, g.(xs .- 20) .- gbar;
-	              title = "(a) Temperature (cubic)", xtitle = "Temperature (°C)", hover = dm.label,
-	              legend = true, comp_name = "Fitted component")
-	rest = map([(:hum_pct, "(b) Humidity", "Relative humidity (%)"), (:wind_kmh, "(c) Wind speed", "Wind speed (km/h)")]) do (v, ttl, lab)
-		x = dm[!, v]; bj = b(string(v))
-		xs2 = collect(range(extrema(x)...; length = 50))
-		cr_panel(x, e .+ bj .* (x .- mean(x)), xs2, bj .* (xs2 .- mean(x));
-		         title = ttl, xtitle = lab, hover = dm.label, comp_name = "Fitted component")
-	end
-	assemble([p1; rest]; rows = 1, cols = 3, height = 380, legend = true, shared_ytitle = true)
+fig_resid_final = let e = residuals(m_final)
+	specs = [(:temp_c, "(a) Temperature", "Temperature (°C)"),
+	         (:hum_pct, "(b) Humidity", "Relative humidity (%)"),
+	         (:wind_kmh, "(c) Wind speed", "Wind speed (km/h)")]
+	panels = [resid_panel(dm[!, v], e; title = ttl, xtitle = lab, hover = dm.label, legend = k == 1)
+	          for (k, (v, ttl, lab)) in enumerate(specs)]
+	assemble(panels; rows = 1, cols = 3, height = 380, legend = true, shared_ytitle = true)
 end
 
-# ╔═╡ 5db10ec2-3cfe-5518-a382-8393eea3cd1d
-"Residuals against fitted values, with a LOESS smoother."
+# ╔═╡ baa12b25-e765-5a2c-be56-a29f876f8a6a
+"Residuals against fitted values, with a smoother; the three largest residuals are labeled."
 function panel_resid_fitted(dx; title = "Residuals vs fitted", legend = false)
 	sm = loess_xy(dx.fitted, dx.resid)
+	top = sortperm(abs.(dx.resid); rev = true)[1:3]
+	top = top[sortperm(dx.fitted[top])]                          # left to right, labels alternate below/above
 	panel([
 		scatter(x = dx.fitted, y = dx.resid, mode = "markers", name = "Day", legendgroup = "pts", showlegend = legend,
 		        marker = attr(size = 5, color = pal.blue_pts), text = dx.label,
 		        hovertemplate = "%{text}<br>fitted %{x:,.0f}<br>residual %{y:,.0f}<extra></extra>"),
 		hline_trace(minimum(dx.fitted), maximum(dx.fitted), 0; legend),
-		scatter(x = sm.x, y = sm.y, mode = "lines", name = "LOESS smoother", legendgroup = "loess", showlegend = legend,
+		scatter(x = sm.x, y = sm.y, mode = "lines", name = "Smoother", legendgroup = "loess", showlegend = legend,
 		        line = attr(color = pal.orange, width = 2), hoverinfo = "skip"),
+		label_trace(dx.fitted[top], dx.resid[top], dx.date[top]; positions = ["bottom center", "top center", "bottom center"]),
 	]; title, xtitle = "Fitted rentals/day", ytitle = "Residual")
 end
 
-# ╔═╡ bce6e04e-f865-5ce7-b3d6-44056a981dd6
+# ╔═╡ ebe45b85-07cc-5d31-bba3-7cb4d0dacd4a
 "Scale–location plot: √|standardized residual| against fitted values."
 function panel_scale_location(dx; title = "Scale–location")
 	y = sqrt.(abs.(dx.r_std))
@@ -1382,126 +1289,105 @@ end
 # ╔═╡ fe299749-6fbf-5b0c-84ad-7241facf0912
 fig_variance = assemble([panel_resid_fitted(dx; legend = true), panel_scale_location(dx)]; rows = 1, cols = 2, height = 400, legend = true)
 
-# ╔═╡ 205d27f9-0d20-5af5-a5b2-20ba0c4bf88c
-"Normal Q–Q plot of the studentized residuals."
+# ╔═╡ a00d7e2c-01d4-5eee-9fd8-66c1e6389d98
+"Normal Q–Q plot of the standardized residuals; the three most extreme are labeled."
 function panel_qq(dx; title = "Normal Q–Q plot")
-	o = sortperm(dx.r_stu); n = length(o)
+	o = sortperm(dx.r_std); n = length(o)
 	q = quantile.(Normal(), ((1:n) .- 0.5) ./ n)
-	lim = [min(q[1], dx.r_stu[o[1]]), max(q[end], dx.r_stu[o[end]])]
+	lim = [min(q[1], dx.r_std[o[1]]), max(q[end], dx.r_std[o[end]])]
+	ext = sortperm(abs.(dx.r_std[o]); rev = true)[1:3]          # positions in sorted order
+	ext = ext[sortperm(dx.r_std[o][ext])]                          # most negative first
+	pos = [r < 0 ? ["bottom right", "middle right", "top right"][k] : "middle left" for (k, r) in enumerate(dx.r_std[o][ext])]
 	panel([
-		scatter(x = q, y = dx.r_stu[o], mode = "markers", legendgroup = "pts", showlegend = false,
+		scatter(x = q, y = dx.r_std[o], mode = "markers", legendgroup = "pts", showlegend = false,
 		        marker = attr(size = 5, color = pal.blue_pts), text = dx.label[o],
-		        hovertemplate = "%{text}<br>theoretical %{x:.2f}<br>studentized %{y:.2f}<extra></extra>"),
+		        hovertemplate = "%{text}<br>theoretical %{x:.2f}<br>standardized %{y:.2f}<extra></extra>"),
 		scatter(x = lim, y = lim, mode = "lines", legendgroup = "ref", showlegend = false,
 		        line = attr(color = pal.muted, width = 1.5, dash = "dash"), hoverinfo = "skip"),
-	]; title, xtitle = "Theoretical N(0, 1) quantile", ytitle = "Studentized residual")
+		label_trace(q[ext], dx.r_std[o][ext], dx.date[o][ext]; positions = pos),
+	]; title, xtitle = "Theoretical N(0, 1) quantile", ytitle = "Standardized residual")
 end
 
-# ╔═╡ a0317095-3a0f-57e1-b064-7d73b4f8be12
-"Histogram of the studentized residuals with the N(0, 1) density."
-function panel_hist(dx; title = "Distribution of studentized residuals")
-	xs = collect(range(minimum(dx.r_stu) - 0.25, maximum(dx.r_stu) + 0.25; length = 200))
+# ╔═╡ 959f7173-6ca3-5048-9175-607b888bfc62
+"Histogram of the standardized residuals with the N(0, 1) density."
+function panel_hist(dx; title = "Distribution of standardized residuals")
+	xs = collect(range(minimum(dx.r_std) - 0.25, maximum(dx.r_std) + 0.25; length = 200))
 	panel([
-		histogram(x = dx.r_stu, histnorm = "probability density", xbins = attr(size = 0.25), showlegend = false,
+		histogram(x = dx.r_std, histnorm = "probability density", xbins = attr(size = 0.25), showlegend = false,
 		          marker = attr(color = pal.blue_pts, line = attr(color = "white", width = 1)),
 		          hovertemplate = "%{x}<br>density %{y:.3f}<extra></extra>"),
 		scatter(x = xs, y = pdf.(Normal(), xs), mode = "lines", showlegend = false,
 		        line = attr(color = pal.orange, width = 2), hoverinfo = "skip"),
-	]; title, xtitle = "Studentized residual", ytitle = "Density")
+	]; title, xtitle = "Standardized residual", ytitle = "Density")
 end
 
-# ╔═╡ 934bff83-0986-5c08-9ab8-a1b8a906869e
+# ╔═╡ 0f05e29d-fa30-5e21-be0a-893cc893bf6c
 fig_normality = assemble([panel_qq(dx), panel_hist(dx)]; rows = 1, cols = 2, height = 400)
 
-# ╔═╡ c823afbe-b119-595e-9c9a-30718077ec4c
-"Studentized residuals against leverage, flagging Cook's D > 4/n and labelling the largest."
-function panel_leverage(dx, p; title = "Studentized residuals vs leverage", nlabel = 3, legend = false)
-	n = nrow(dx); flag = dx.cooks_d .> 4 / n
-	top = sortperm(dx.cooks_d; rev = true)[1:nlabel]
-	hmax = 1.05 * maximum(dx.leverage)
-	ylim = [minimum(dx.r_stu) - 0.4, maximum(dx.r_stu) + 0.4]
-	hov = "%{text}<br>leverage %{x:.3f}<br>studentized %{y:.2f}<br>Cook's D %{customdata:.3f}<extra></extra>"
+# ╔═╡ 2c41acbd-93e5-5a01-b66f-4454b8070d88
+"Standardized residuals against leverage (dashed line at 2p/n); the three largest Cook's distances are labeled."
+function panel_leverage(dx, p; title = "Residuals vs leverage")
+	n = nrow(dx)
+	top = sortperm(dx.cooks_d; rev = true)[1:3]
+	ylim = [minimum(dx.r_std) - 0.4, maximum(dx.r_std) + 0.4]
 	panel([
-		scatter(x = dx.leverage[.!flag], y = dx.r_stu[.!flag], mode = "markers", name = "Day", legendgroup = "pts",
-		        showlegend = false, marker = attr(size = 5, color = pal.blue_pts), text = dx.label[.!flag],
-		        customdata = dx.cooks_d[.!flag], hovertemplate = hov),
-		scatter(x = dx.leverage[flag], y = dx.r_stu[flag], mode = "markers", name = "Cook's D > 4/n", legendgroup = "flag",
-		        showlegend = legend, marker = attr(size = 7, color = pal.orange, line = attr(color = "white", width = 1)),
-		        text = dx.label[flag], customdata = dx.cooks_d[flag], hovertemplate = hov),
+		scatter(x = dx.leverage, y = dx.r_std, mode = "markers", legendgroup = "pts", showlegend = false,
+		        marker = attr(size = 5, color = pal.blue_pts), text = dx.label, customdata = dx.cooks_d,
+		        hovertemplate = "%{text}<br>leverage %{x:.3f}<br>standardized %{y:.2f}<br>Cook's D %{customdata:.3f}<extra></extra>"),
 		scatter(x = [2p / n, 2p / n], y = ylim, mode = "lines", showlegend = false, hoverinfo = "skip",
 		        line = attr(color = pal.muted, width = 1, dash = "dash")),
-		hline_trace(0, hmax, 3), hline_trace(0, hmax, -3),
-		scatter(x = dx.leverage[top], y = dx.r_stu[top], mode = "text", showlegend = false, hoverinfo = "skip",
-		        text = "  " .* Dates.format.(dx.date[top], "d u yyyy"), textposition = "middle right",
-		        textfont = attr(size = 10, color = pal.ink2), cliponaxis = false),
-	]; title, xtitle = "Leverage hᵢᵢ (dashed: 2p/n)", ytitle = "Studentized residual")
+		hline_trace(0, 1.05 * maximum(dx.leverage), 0),
+		label_trace(dx.leverage[top], dx.r_std[top], dx.date[top]),
+	]; title, xtitle = "Leverage hᵢᵢ (dashed: 2p/n)", ytitle = "Standardized residual")
 end
 
-# ╔═╡ 6e36fe37-218a-5fcb-8ff2-c520f54fa1bc
+# ╔═╡ 9cf637e5-ca1b-57f7-b78c-b581b4aeaf86
+fig_paper_diagnostics = assemble([
+		panel_resid_fitted(dx; title = "(a) Residuals vs fitted", legend = true),
+		panel_qq(dx; title = "(b) Normal Q–Q"),
+		panel_scale_location(dx; title = "(c) Scale–location"),
+		panel_leverage(dx, influence_summary.p; title = "(d) Residuals vs leverage"),
+	]; rows = 2, cols = 2, height = 720, legend = true, hspace = 0.1)
+
+# ╔═╡ 5db10ec2-3cfe-5518-a382-8393eea3cd1d
 "Date axis with a tick every six months."
 date_axis = (type = "date", dtick = "M6", tickformat = "%b<br>%Y", tickangle = 0)
 
-# ╔═╡ 73a02ae8-8320-5173-b948-d57a43ad94ab
-"Cook's distance for every day, in time order."
-function panel_cooks_time(dx; title = "Cook's distance over time", nlabel = 3)
-	n = nrow(dx); top = sortperm(dx.cooks_d; rev = true)[1:nlabel]
+# ╔═╡ 4cd4d389-28de-56f3-8569-17ab4ecd52ec
+"Cook's distance for every day (R's `plot(lm, which = 4)`), with the three largest labeled."
+function panel_cooks_index(dx; title = "Cook's distance by day")
+	top = sortperm(dx.cooks_d; rev = true)[1:3]
 	panel([
 		scatter(x = dx.date, y = dx.cooks_d, mode = "markers", marker = attr(size = 4, color = pal.blue_pts),
 		        showlegend = false, text = dx.label, hovertemplate = "%{text}<br>Cook's D %{y:.3f}<extra></extra>"),
-		hline_trace(minimum(dx.date), maximum(dx.date), 4 / n; dash = "dash"),
-		scatter(x = dx.date[top], y = dx.cooks_d[top], mode = "text", showlegend = false, hoverinfo = "skip",
-		        text = Dates.format.(dx.date[top], "d u yyyy") .* "  ", textposition = "middle left",
-		        textfont = attr(size = 10, color = pal.ink2), cliponaxis = false),
-	]; title, xtitle = "Date (dashed: 4/n)", ytitle = "Cook's distance", xopts = date_axis)
+		label_trace(dx.date[top], dx.cooks_d[top], dx.date[top]; positions = fill("middle left", 3)),
+	]; title, xtitle = "Date", ytitle = "Cook's distance", xopts = date_axis)
 end
 
-# ╔═╡ c08549a5-8d31-5bf5-9998-eac01a9a8fec
-fig_influence = assemble([panel_leverage(dx, influence_summary.p; legend = true), panel_cooks_time(dx)];
-                         rows = 1, cols = 2, height = 420, legend = true)
+# ╔═╡ 1bf27a1a-1c7b-52b5-9fe6-d6c47d3ae62b
+fig_influence = assemble([panel_leverage(dx, influence_summary.p), panel_cooks_index(dx)];
+                         rows = 1, cols = 2, height = 420)
 
-# ╔═╡ 0a520e4b-f714-5812-967b-b7f9c34f89ee
-"Residuals in time order with a LOESS trend."
-function panel_resid_time(dx; title = "Residuals over time", legend = false)
+# ╔═╡ bce6e04e-f865-5ce7-b3d6-44056a981dd6
+"Residuals in time order with a smoother."
+function panel_resid_time(dx; title = "Residuals over time")
 	o = sortperm(dx.date)
 	t = Dates.value.(dx.date[o] .- dx.date[o[1]])
 	sm = loess_xy(t, dx.resid[o]; span = 0.15, npts = 200)
 	panel([
-		scatter(x = dx.date[o], y = dx.resid[o], mode = "markers", legendgroup = "pts", showlegend = false,
+		scatter(x = dx.date[o], y = dx.resid[o], mode = "markers", showlegend = false,
 		        marker = attr(size = 4, color = pal.blue_pts), text = dx.label[o],
 		        hovertemplate = "%{text}<br>residual %{y:,.0f}<extra></extra>"),
 		hline_trace(dx.date[o[1]], dx.date[o[end]], 0),
-		scatter(x = dx.date[o[1]] .+ Day.(round.(Int, sm.x)), y = sm.y, mode = "lines", legendgroup = "loess",
+		scatter(x = dx.date[o[1]] .+ Day.(round.(Int, sm.x)), y = sm.y, mode = "lines",
 		        showlegend = false, line = attr(color = pal.orange, width = 2), hoverinfo = "skip"),
 	]; title, xtitle = "Date", ytitle = "Residual", xopts = date_axis)
 end
 
-# ╔═╡ ffff8049-1a0d-55ca-9372-57a273418367
-"Autocorrelation of the residuals (in time order) with ±1.96/√n bounds."
-function panel_acf(dx; title = "Residual autocorrelation", maxlag = 28)
-	e = dx.resid[sortperm(dx.date)]; n = length(e)
-	r = autocor(e, 1:maxlag); bound = 1.96 / sqrt(n)
-	panel([
-		bar(x = 1:maxlag, y = r, width = 0.4, marker = attr(color = pal.blue), showlegend = false,
-		    hovertemplate = "lag %{x} days<br>r = %{y:.2f}<extra></extra>"),
-		hline_trace(0.5, maxlag + 0.5, bound; dash = "dash"), hline_trace(0.5, maxlag + 0.5, -bound; dash = "dash"),
-		hline_trace(0.5, maxlag + 0.5, 0; dash = "solid"),
-	]; title, xtitle = "Lag (days)", ytitle = "Autocorrelation", xopts = (range = [0.3, maxlag + 0.7],))
-end
+# ╔═╡ 591d23d4-f035-57e9-9a66-1c4b216e0234
+fig_time = assemble([panel_resid_time(dx; title = "Residuals over time")]; rows = 1, cols = 1, height = 360)
 
-# ╔═╡ f99f9b53-725c-51fb-9a60-e34f242ddd5c
-fig_independence = assemble([panel_resid_time(dx; legend = true), panel_acf(dx)]; rows = 1, cols = 2, height = 400, legend = true)
-
-# ╔═╡ a0df578d-b530-5c6c-8a80-7b62a2eb8456
-fig_paper_diagnostics = assemble([
-		panel_resid_fitted(dx; title = "(a) Residuals vs fitted", legend = true),
-		panel_scale_location(dx; title = "(b) Scale–location"),
-		panel_qq(dx; title = "(c) Normal Q–Q"),
-		panel_leverage(dx, influence_summary.p; title = "(d) Residuals vs leverage", nlabel = 3, legend = true),
-		panel_resid_time(dx; title = "(e) Residuals over time"),
-		panel_acf(dx; title = "(f) Residual autocorrelation"),
-	]; rows = 2, cols = 3, height = 680, legend = true, hspace = 0.11)
-
-# ╔═╡ 871f95e4-b3ba-50a1-94e2-64518444a161
+# ╔═╡ 205d27f9-0d20-5af5-a5b2-20ba0c4bf88c
 "Partial-effect panel for a continuous predictor: fitted curve, 95 % band and a rug of observed days."
 function effect_line_panel(tab, xdata; title, xtitle, yrange, xfmt = ".1f", unit = "")
 	x = tab.x
@@ -1518,7 +1404,7 @@ function effect_line_panel(tab, xdata; title, xtitle, yrange, xfmt = ".1f", unit
 	]; title, xtitle, ytitle = "Predicted rentals/day", yopts = (range = collect(yrange),))
 end
 
-# ╔═╡ 4790e3ca-3e22-5eb3-a0eb-f2ebc5232637
+# ╔═╡ a0317095-3a0f-57e1-b064-7d73b4f8be12
 "Partial-effect panel for a factor: adjusted means with 95 % error bars."
 function effect_point_panel(tab; title, xtitle = "", yrange, labels = Dict{String, String}())
 	panel([
@@ -1531,7 +1417,7 @@ function effect_point_panel(tab; title, xtitle = "", yrange, labels = Dict{Strin
 	]; title, xtitle, ytitle = "Predicted rentals/day", xopts = (type = "category", tickangle = 0), yopts = (range = collect(yrange),))
 end
 
-# ╔═╡ ea7eb588-da33-58c9-8514-431796a2cc0f
+# ╔═╡ e1171cbd-b81e-5422-aabf-c15c41a9c285
 fig_effects = let E = effects
 	lo = minimum(minimum(t.lower) for t in E)
 	hi = maximum(maximum(t.upper) for t in E)
@@ -1547,15 +1433,16 @@ fig_effects = let E = effects
 	]; rows = 2, cols = 3, height = 680, shared_ytitle = true)
 end
 
-# ╔═╡ c1047b10-9bed-5545-99fe-7a42e22f6c78
+# ╔═╡ 22aefb06-4242-5a19-ae35-144580fe963c
 paper_figures = [   # (file name, figure, width px, height px) for a ~5.2-inch print width
-	("fig1_linearity", fig_cr_base, 700, 290),
-	("fig2_diagnostics", fig_paper_diagnostics, 680, 520),
+	("fig1_residuals_baseline", fig_resid_base, 700, 290),
+	("fig2_diagnostics", fig_paper_diagnostics, 680, 540),
 	("fig3_effects", fig_effects, 680, 520),
-	("figA1_linearity_final", fig_cr_final, 700, 290),
+	("figA1_residuals_final", fig_resid_final, 700, 290),
+	("figA2_residuals_time", fig_time, 700, 260),
 ];
 
-# ╔═╡ b87d49db-2bb0-5cf1-b17f-b042daa26ea3
+# ╔═╡ a0df578d-b530-5c6c-8a80-7b62a2eb8456
 if export_figures
 	let dir = mkpath(joinpath(@__DIR__, "figures"))
 		PlotlyKaleido.start()
@@ -1578,14 +1465,12 @@ Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
-HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Loess = "4345ca2d-374a-55d4-8d30-97f9976e7612"
 PlotlyKaleido = "f2990250-8cf9-495f-b13a-cce12b45703c"
 PlutoPlotly = "8e989ff0-3d88-8e9f-f020-2b208a939ff0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
@@ -1596,7 +1481,6 @@ CSV = "~1.1.0"
 DataFrames = "~1.8.2"
 Distributions = "~0.25.131"
 GLM = "~1.9.5"
-HypothesisTests = "~0.12.2"
 Loess = "~0.6.6"
 PlotlyKaleido = "~2.3.1"
 PlutoPlotly = "~0.6.6"
@@ -1612,7 +1496,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.7"
 manifest_format = "2.0"
-project_hash = "a8bb86b9f04bf5ca63654c9a2d0e4bd762cea402"
+project_hash = "9abce95211a55bc09b4a8964a4a2413c525043bb"
 
 [[deps.AbstractPlutoDingetjes]]
 git-tree-sha1 = "e71ee7b4aa06b045259a7d6101e1cb45ad140bce"
@@ -1714,11 +1598,6 @@ deps = ["ColorTypes", "FixedPointNumbers", "LinearAlgebra", "Reexport"]
 git-tree-sha1 = "a633156e74096f90b3b5e833529292b651b5671a"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.3"
-
-[[deps.Combinatorics]]
-git-tree-sha1 = "c761b00e7755700f9cdf5b02039939d1359330e1"
-uuid = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
-version = "1.1.0"
 
 [[deps.CommonSolve]]
 deps = ["PrecompileTools"]
@@ -1931,12 +1810,6 @@ deps = ["Tricks"]
 git-tree-sha1 = "d1a86724f81bcd184a38fd284ce183ec067d71a0"
 uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
 version = "1.0.0"
-
-[[deps.HypothesisTests]]
-deps = ["Combinatorics", "Distributions", "LinearAlgebra", "Printf", "Random", "Roots", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "0b7026cbe6b5380b8f8a5c2a7306363e2ebd2146"
-uuid = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
-version = "0.12.2"
 
 [[deps.IOCapture]]
 deps = ["Logging", "Random"]
@@ -2632,42 +2505,42 @@ version = "17.7.0+0"
 # ╠═fe299749-6fbf-5b0c-84ad-7241facf0912
 # ╠═1cba0456-559b-51f2-b168-b54671242470
 # ╠═9385f2bb-02d5-5601-b607-21ab83cbc7af
-# ╠═03c595c5-a8c8-59c7-a678-23ec0f6c7ca8
-# ╟─0f05e29d-fa30-5e21-be0a-893cc893bf6c
+# ╟─03c595c5-a8c8-59c7-a678-23ec0f6c7ca8
+# ╠═0f05e29d-fa30-5e21-be0a-893cc893bf6c
 # ╠═934bff83-0986-5c08-9ab8-a1b8a906869e
 # ╠═3584448f-db33-501d-9d2e-aded839ec383
-# ╟─123aff1a-ce1a-5c4e-abe7-4acc1e8abe67
-# ╠═c08549a5-8d31-5bf5-9998-eac01a9a8fec
+# ╠═123aff1a-ce1a-5c4e-abe7-4acc1e8abe67
+# ╟─c08549a5-8d31-5bf5-9998-eac01a9a8fec
 # ╠═d7e240c4-43e9-5623-9c2f-c05e1632613b
-# ╠═d859bbe4-8de5-56d5-889e-4966555a7609
+# ╟─d859bbe4-8de5-56d5-889e-4966555a7609
 # ╠═1bf27a1a-1c7b-52b5-9fe6-d6c47d3ae62b
-# ╟─6c29df36-6f08-5490-a746-a8919f58520d
+# ╠═6c29df36-6f08-5490-a746-a8919f58520d
 # ╠═f99f9b53-725c-51fb-9a60-e34f242ddd5c
 # ╠═8f0f82d1-0133-5e92-bc63-15f82f2c3e6b
 # ╟─13e28fbf-f753-55f4-8bcf-95ab485955a4
 # ╠═2a26b984-1664-5c18-9897-d084443069a5
-# ╟─d8ff42f8-1f3e-5c15-85f4-0b5f735b6d3c
-# ╠═96ed9737-95b4-5f80-8f24-7ca235f6338f
+# ╠═d8ff42f8-1f3e-5c15-85f4-0b5f735b6d3c
+# ╟─96ed9737-95b4-5f80-8f24-7ca235f6338f
 # ╠═591d23d4-f035-57e9-9a66-1c4b216e0234
 # ╠═8c5f01cd-b1e0-5499-babb-29cefa12bea8
-# ╠═f0428f99-1cc0-50b4-8712-fcecf7a0cde0
-# ╟─cfd3c36b-5c47-522f-a3c8-3c6fc989ecd6
-# ╠═02b8eb52-3091-56c9-baed-0163c38821f4
+# ╟─f0428f99-1cc0-50b4-8712-fcecf7a0cde0
+# ╠═cfd3c36b-5c47-522f-a3c8-3c6fc989ecd6
+# ╟─02b8eb52-3091-56c9-baed-0163c38821f4
 # ╠═22039358-cdb9-591a-9886-9b4f9246dd14
-# ╟─e1171cbd-b81e-5422-aabf-c15c41a9c285
+# ╠═e1171cbd-b81e-5422-aabf-c15c41a9c285
 # ╠═2e58cdde-e6b3-5344-a92c-4e71d3787e78
 # ╠═ea7eb588-da33-58c9-8514-431796a2cc0f
 # ╠═e7e18744-b85d-570e-9f26-3deeb819d163
-# ╠═fb959d59-774a-5f92-b4ea-8857c0244794
-# ╠═e9f21b17-e6f1-5046-92c2-5c558b143ae4
+# ╟─fb959d59-774a-5f92-b4ea-8857c0244794
+# ╟─e9f21b17-e6f1-5046-92c2-5c558b143ae4
 # ╟─105a4a50-0a63-5c4c-8871-80b10ffb25bf
-# ╟─1a807fce-4535-511c-a246-06e0f8c5740a
-# ╟─9cf637e5-ca1b-57f7-b78c-b581b4aeaf86
+# ╠═1a807fce-4535-511c-a246-06e0f8c5740a
+# ╠═9cf637e5-ca1b-57f7-b78c-b581b4aeaf86
 # ╠═22aefb06-4242-5a19-ae35-144580fe963c
 # ╠═a0df578d-b530-5c6c-8a80-7b62a2eb8456
-# ╠═c1047b10-9bed-5545-99fe-7a42e22f6c78
+# ╟─c1047b10-9bed-5545-99fe-7a42e22f6c78
 # ╠═b87d49db-2bb0-5cf1-b17f-b042daa26ea3
-# ╟─15abc70e-9d9b-5acf-b8f7-f19fbfbb309e
+# ╠═15abc70e-9d9b-5acf-b8f7-f19fbfbb309e
 # ╠═858996ad-09da-542f-9e41-d0a85dbf141b
 # ╠═d42ac367-1f08-5df6-9406-45024724852b
 # ╠═38160394-806f-5fea-87ce-3ce423b72906
@@ -2688,14 +2561,14 @@ version = "17.7.0+0"
 # ╠═fd92b114-882b-5d58-b796-65f16b7ed036
 # ╠═1c616f39-34a0-5edb-afa8-ad0b5422e1f4
 # ╠═534d78c1-20ba-5c47-99c9-4eb9ccba4ec9
-# ╠═6bd45608-925d-58c1-a0e5-cafe0955d309
+# ╟─6bd45608-925d-58c1-a0e5-cafe0955d309
 # ╠═4a891c07-30cd-51ed-97dc-ac9eaa5f7a19
 # ╠═7599cc52-706c-5fde-bbda-114308464a76
 # ╠═98b9ee02-e261-54e5-86fc-88180cef1f06
 # ╠═6cd0859e-fac1-59a6-a6ed-511e9f9a8ce7
 # ╠═db2eb977-c594-57ef-8048-82771ef025bd
 # ╠═36774504-de25-5f18-8bb1-d7880a3f1c35
-# ╟─dee730ee-2889-5b4f-ae31-5622273e4bba
+# ╠═dee730ee-2889-5b4f-ae31-5622273e4bba
 # ╠═92e8060a-a6d5-5486-b032-d7179a07cf72
 # ╠═baa12b25-e765-5a2c-be56-a29f876f8a6a
 # ╠═ebe45b85-07cc-5d31-bba3-7cb4d0dacd4a
@@ -2707,12 +2580,5 @@ version = "17.7.0+0"
 # ╠═bce6e04e-f865-5ce7-b3d6-44056a981dd6
 # ╠═205d27f9-0d20-5af5-a5b2-20ba0c4bf88c
 # ╠═a0317095-3a0f-57e1-b064-7d73b4f8be12
-# ╠═c823afbe-b119-595e-9c9a-30718077ec4c
-# ╠═73a02ae8-8320-5173-b948-d57a43ad94ab
-# ╠═6e36fe37-218a-5fcb-8ff2-c520f54fa1bc
-# ╠═0a520e4b-f714-5812-967b-b7f9c34f89ee
-# ╠═ffff8049-1a0d-55ca-9372-57a273418367
-# ╠═871f95e4-b3ba-50a1-94e2-64518444a161
-# ╠═4790e3ca-3e22-5eb3-a0eb-f2ebc5232637
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
