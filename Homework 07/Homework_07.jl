@@ -5,11 +5,12 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ d544de4a-46a6-4dc7-8424-37f9ab150640
-using RData, DataFrames, CategoricalArrays, GLM, Statistics, StatsPlots, HypothesisTests, Distributions
+using RData, DataFrames, CategoricalArrays, GLM, Statistics, StatsPlots, Distributions
 
 # ╔═╡ f98e889a-6464-4032-9b37-de1d8e1ec0e7
 md"""
 # Homework 07 - Analysis of Variance
+*Each of the following problems uses the butterfat data set from the faraway library. This dataset provides data on the butterfat content of milk from Canadian cows of five different breeds. For the sake of this assignment, we will consider only mature cows.*
 """
 
 # ╔═╡ 084e4d11-8d98-40bb-88a7-0ac1bc9f180a
@@ -27,6 +28,7 @@ end
 md"""
 ## Problem 1
 ### Part a)
+*Plot the data by breed and interpret what you see.*
 """
 
 # ╔═╡ 2a04fedc-8a2f-471d-9613-1f39064c62dd
@@ -34,12 +36,13 @@ boxplot(string.(data1.Breed), data1.Butterfat, legend=false, xlabel="Breed", yla
 
 # ╔═╡ fd888d3e-3fa0-48bc-b48e-c1144a547d54
 md"""
-Jersey and Guernsey cows have the highest butterfat content, Holstein-Fresian the lowest, and Ayrshire and Canadian are in between and look similar to each other. The spread also differs by breed: Jersey and Guernsey are more variable (with a few high outliers) than Holstein-Fresian, Ayrshire, and Canadian.
+Jersey and Guernsey have the highest butterfat, Holstein-Fresian the lowest, and Ayrshire and Canadian are similar. Jersey and Guernsey also have more spread.
 """
 
 # ╔═╡ b02b6875-e365-4988-97c6-7f7d976f14a2
 md"""
 ### Part b)
+*For each of the breeds, find the average butterfat content and find the standard deviation for the butterfat content. Present your solution in a dataframe. Based on the values are there any concerns regarding running regression on the data?*
 """
 
 # ╔═╡ 61222b7c-5333-4762-9de1-5480920aa1f6
@@ -47,13 +50,13 @@ stats = combine(groupby(data1, :Breed), :Butterfat => mean => :Mean, :Butterfat 
 
 # ╔═╡ 3a61c680-b5d4-406a-b255-7e78dfae1730
 md"""
-The largest standard deviation (Jersey, ≈ 0.51) is about twice the smallest (Ayrshire, ≈ 0.25). This is below the usual 2:1 rule-of-thumb cutoff (ratio ≈ 2.06, borderline), so the constant variance assumption is not badly violated, but it is worth checking in the diagnostics. The variance also tends to increase with the mean.
+Slight concern: the largest SD (Jersey, 0.51) is about twice the smallest (Ayrshire, 0.25), so equal variance is borderline.
 """
 
 # ╔═╡ 58bac190-35d0-4ef7-baa2-d02f8b6afd11
 md"""
 ### Part c)
-Effect coding (sum-to-zero contrasts), with Jersey as the level coded −1 so that Breed1 = Ayrshire, Breed2 = Canadian, Breed3 = Guernsey, Breed4 = Holstein-Fresian (same as R's `contr.sum`).
+*Using the effect coding method, create a regression equation for the butterfat content of the different cow breeds. Provide the summary output from R. Based on the summary output show how the average butterfat can be obtained for each of the cow breeds. (Note: Breed 1= Ayrshire, Breed2 = Canadian, Breed3 = Guernsey, Breed4 = Holstein-Fresian) Finally, what does the intercept represent in this model?*
 """
 
 # ╔═╡ 6a0fcc55-44cc-404f-9032-b33f035f6bf2
@@ -77,12 +80,13 @@ Butterfat = 4.5344 − 0.3804·Breed1 − 0.1454·Breed2 + 0.4666·Breed3 − 0.
 - Holstein-Fresian: 4.5344 − 0.8584 = 3.676
 - Jersey: 4.5344 − (−0.3804 − 0.1454 + 0.4666 − 0.8584) = 4.5344 + 0.9176 = 5.452
 
-These match the means in Part b. The intercept (4.5344) is the grand mean, the average of the five breed means; each coefficient is how far that breed's mean is from the grand mean.
+The intercept (4.5344) is the average of the five breed means.
 """
 
 # ╔═╡ bd3e48c3-6fbc-4089-be72-0e37a85cdaf6
 md"""
 ### Part d)
+*Check the diagnostics for your model.*
 """
 
 # ╔═╡ a1ca7141-0235-49a8-8c95-0373ffbad6b9
@@ -93,24 +97,18 @@ begin
 	plot(p1, p2, layout=(1, 2), size=(800, 350))
 end
 
-# ╔═╡ 0f593e62-496b-4f1b-b313-8ce43612d02f
-ShapiroWilkTest(residuals(model))
-
-# ╔═╡ 0d65f413-2c8c-43f7-9ac3-a93c1a6f7d4e
-LeveneTest([data1.Butterfat[data1.Breed .== b] for b in levels(data1.Breed)]...)
-
 # ╔═╡ 8a04181c-e62d-4f50-ad7d-af742e4a5e69
 md"""
-- **Constant variance:** the residuals vs fitted plot shows somewhat more spread at the higher fitted values (Guernsey and Jersey), but Levene's test does not reject equal variances (p ≈ 0.11).
-- **Normality:** the Q-Q plot is mostly linear with a slightly heavy upper tail from a few large residuals; Shapiro-Wilk does not reject normality at α = 0.05 (p ≈ 0.058).
-- **Independence:** the cows are different animals, so independence is reasonable.
+- Residuals vs fitted: points are spread around 0, with a bit more spread at higher fitted values (Guernsey, Jersey). No serious problem with constant variance.
+- Q-Q plot: points follow the line fairly well, with a few large residuals at the top. Normality is reasonable.
 
-The assumptions are acceptable, though the variance and right tail are borderline.
+The assumptions are reasonably met.
 """
 
 # ╔═╡ 8fda9a9b-93bb-45cc-8406-7e7f22ba61c6
 md"""
 ### Part e)
+*Test for a difference between the breeds. (Make sure to run the full hypothesis test)*
 """
 
 # ╔═╡ faf1bcfc-9743-444a-8189-88bcdf83ee6e
@@ -118,46 +116,35 @@ ftest(lm(@formula(Butterfat ~ 1), data1).model, model.model)
 
 # ╔═╡ 213c8c42-338c-4ae8-ad17-698e021138af
 md"""
-- H₀: μ₁ = μ₂ = μ₃ = μ₄ = μ₅ (equivalently β₁ = β₂ = β₃ = β₄ = 0). Mean butterfat is the same for all breeds.
+- H₀: μ₁ = μ₂ = μ₃ = μ₄ = μ₅ (all breeds have the same mean butterfat)
 - Hₐ: at least one breed mean is different.
 - α = 0.05
 - Test statistic: F = 37.86 on 4 and 45 df
 - p-value < 0.0001
 - Decision: p < α, so reject H₀.
-- Conclusion: there is strong evidence that mean butterfat content differs between at least two of the breeds of mature cows.
+- Conclusion: mean butterfat differs for at least one breed.
 """
 
 # ╔═╡ 3553c36e-7b7f-4dfa-a07f-df757ed425f5
 md"""
 ### Part f)
-Tukey HSD pairwise comparisons (95% family-wise confidence intervals)
+*Produce a plot to check for differences in butterfat between breeds. Which pairwise differences are not statistically signifcant? (You may also have to look at the summary)*
 """
 
 # ╔═╡ 6ef381f6-980e-4c72-b53e-ba3e9ae2061d
 begin
-	lv = levels(data1.Breed)
-	μ = [mean(data1.Butterfat[data1.Breed .== b]) for b in lv]
-	n = 10
-	dfe = dof_residual(model)
-	se = sqrt(deviance(model) / dfe / n)
-	q = quantile(StudentizedRange(dfe, length(lv)), 0.95)
-	tukey = DataFrame(Comparison = String[], Diff = Float64[], Lower = Float64[], Upper = Float64[], p = Float64[])
-	for i in 1:length(lv), j in i+1:length(lv)
-		d = μ[j] - μ[i]
-		push!(tukey, ("$(lv[j]) - $(lv[i])", d, d - q * se, d + q * se, ccdf(StudentizedRange(dfe, length(lv)), abs(d) / se)))
-	end
-	tukey
+	# 95% CI for each breed mean: ȳ ± t* √(MSE/n)
+	tcrit = quantile(TDist(dof_residual(model)), 0.975)
+	se = sqrt(deviance(model) / dof_residual(model) / 10)
+	ci = transform(stats, :Mean => (m -> m .- tcrit * se) => :Lower, :Mean => (m -> m .+ tcrit * se) => :Upper)
 end
 
 # ╔═╡ 72f84b46-0a6e-473d-a11d-650c7e58f7fb
-begin
-	scatter(tukey.Diff, 1:nrow(tukey), xerror=(tukey.Diff .- tukey.Lower, tukey.Upper .- tukey.Diff), yticks=(1:nrow(tukey), tukey.Comparison), legend=false, xlabel="Difference in mean butterfat", title="Tukey HSD 95% family-wise CIs", size=(800, 450))
-	vline!([0], color=:red, linestyle=:dash)
-end
+scatter(string.(ci.Breed), ci.Mean, yerror=tcrit * se, legend=false, xlabel="Breed", ylabel="Mean butterfat (%)", title="Breed means with 95% CIs", xrotation=15)
 
 # ╔═╡ 5ed1d522-4a76-43f0-81a3-09bc8e555496
 md"""
-The intervals that contain 0 are **Canadian − Ayrshire** (p ≈ 0.59) and **Jersey − Guernsey** (p ≈ 0.055). These two pairwise differences are not statistically significant. All the other pairs are significantly different at the 0.05 level.
+Intervals that overlap are not significantly different: **Ayrshire and Canadian**, and **Guernsey and Jersey**. All other pairs do not overlap. Guernsey and Jersey only barely overlap, so that difference is borderline.
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -167,7 +154,6 @@ CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
-HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
 RData = "df47a6cb-8c03-5eed-afd8-b6050d6c41da"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
@@ -177,7 +163,6 @@ CategoricalArrays = "~1.1.1"
 DataFrames = "~1.8.2"
 Distributions = "~0.25.132"
 GLM = "~1.9.5"
-HypothesisTests = "~0.12.2"
 RData = "~1.1.0"
 StatsPlots = "~0.15.8"
 """
@@ -188,7 +173,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.7"
 manifest_format = "2.0"
-project_hash = "b899760fb77586f39870f4067d34cdb0e8f86bb4"
+project_hash = "f59b1b2e745ad9e3513c4057553a38ada1588587"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -364,11 +349,6 @@ deps = ["ColorTypes", "FixedPointNumbers", "LinearAlgebra", "Reexport"]
 git-tree-sha1 = "a633156e74096f90b3b5e833529292b651b5671a"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.3"
-
-[[deps.Combinatorics]]
-git-tree-sha1 = "c761b00e7755700f9cdf5b02039939d1359330e1"
-uuid = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
-version = "1.1.0"
 
 [[deps.CommonSolve]]
 deps = ["PrecompileTools"]
@@ -677,12 +657,6 @@ deps = ["Gamma", "LinearAlgebra"]
 git-tree-sha1 = "c28dceeadc1c9c699656a3ac9d63f79cfaa17472"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
 version = "0.3.31"
-
-[[deps.HypothesisTests]]
-deps = ["Combinatorics", "Distributions", "LinearAlgebra", "Printf", "Random", "Roots", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "0b7026cbe6b5380b8f8a5c2a7306363e2ebd2146"
-uuid = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
-version = "0.12.2"
 
 [[deps.InlineStrings]]
 git-tree-sha1 = "06b65886c7577a3784d616e29f1302c2e36e389d"
@@ -1844,8 +1818,6 @@ version = "1.13.0+0"
 # ╟─a26c2dc3-bd28-4941-9bec-c5c6213d0dbb
 # ╟─bd3e48c3-6fbc-4089-be72-0e37a85cdaf6
 # ╠═a1ca7141-0235-49a8-8c95-0373ffbad6b9
-# ╠═0f593e62-496b-4f1b-b313-8ce43612d02f
-# ╠═0d65f413-2c8c-43f7-9ac3-a93c1a6f7d4e
 # ╟─8a04181c-e62d-4f50-ad7d-af742e4a5e69
 # ╟─8fda9a9b-93bb-45cc-8406-7e7f22ba61c6
 # ╠═faf1bcfc-9743-444a-8189-88bcdf83ee6e
